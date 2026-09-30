@@ -96,11 +96,12 @@ kiln/
 - [x] Surface abstraction: same piece code → canvas (any resolution) or SVG
 - [x] Export: PNG (2K–16K, single canvas) and SVG; `npm run render:svg` CLI
 - [x] First pieces: flow field, circle packing, watercolor
-- [ ] Tiled PNG export beyond browser canvas limits (Safari caps far below 16K)
-- [ ] Render in a Web Worker so heavy pieces don't block the UI
-- [ ] Watercolor: per-layer texture masking (Hobbs-style) for more paper-like variation
-- [ ] Snapshot/favorites: save (piece, params, seed) combos to a gallery
-- [ ] URL state for sharing a specific variation
+- [x] Rendering in Web Workers: latest-wins previews; exports in their own worker
+- [x] Strip-tiled PNG export via a streaming encoder (beyond canvas limits); params embedded as PNG metadata
+- [x] Clip API (canvas + SVG); watercolor texture masking
+- [x] Gallery: saved variations as `gallery/<id>.json` + `.jpg` via a dev-server API
+- [x] URL hash state for sharing a specific variation
+- [ ] Restore a variation by dropping an exported PNG (read the embedded metadata)
 
 ### M2 — 3D worker
 - [ ] Python render worker (HTTP/WebSocket) with job queue

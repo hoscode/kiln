@@ -25,6 +25,7 @@ export default definePiece({
     baseDepth: int(3, 1, 5, 'Base depth'),
     layerDepth: int(3, 1, 5, 'Layer depth'),
     alpha: num(0.03, 0.005, 0.15, 0.001),
+    texture: num(0.5, 0, 1, 0.01),
     blend: choice(['source-over', 'multiply'], 'source-over'),
     margin: num(120, 0, 300, 1),
     grain: num(0.16, 0, 0.5, 0.01),
@@ -53,13 +54,27 @@ export default definePiece({
         const rr = r * rng.range(0.85, 1.1);
         return { x: cx + Math.cos(a) * rr, y: cy + Math.sin(a) * rr, v: rng.range(0.4, 1.6) };
       });
-      return { base: deform(poly, p.baseDepth, rng, p.variance), color: rng.pick(pal.colors) };
+      return { cx, cy, r, base: deform(poly, p.baseDepth, rng, p.variance), color: rng.pick(pal.colors) };
     });
 
+    // Texture: some layers are masked by scattered circles, so pigment pools
+    // unevenly instead of every layer covering the whole shape. Masks use their
+    // own stream so changing `texture` doesn't reshape the blobs.
+    const maskRng = rng.fork('mask');
     for (let l = 0; l < p.layers; l++) {
       for (const b of blobs) {
-        const layer = deform(b.base, p.layerDepth, rng, p.variance);
-        g.path(layer.map((v): Vec2 => [v.x, v.y]), { fill: jitter(b.color, rng, 0.015), alpha: p.alpha, blend: p.blend }, true);
+        const pts = deform(b.base, p.layerDepth, rng, p.variance).map((v): Vec2 => [v.x, v.y]);
+        const style = { fill: jitter(b.color, rng, 0.015), alpha: p.alpha, blend: p.blend };
+        if (maskRng() < p.texture) {
+          const mask = Array.from({ length: 24 }, () => ({
+            x: b.cx + maskRng.gauss(0, b.r * 0.6),
+            y: b.cy + maskRng.gauss(0, b.r * 0.6),
+            r: b.r * maskRng.range(0.08, 0.3),
+          }));
+          g.clip(mask, () => g.path(pts, style, true));
+        } else {
+          g.path(pts, style, true);
+        }
       }
     }
 

@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["apps/ui/src/**/*", "engine2d/**/*", "pieces/**/*", "scripts/**/*", "vite.config.ts"]
+  "include": ["apps/ui/src/**/*", "apps/ui/server/**/*", "engine2d/**/*", "pieces/**/*", "scripts/**/*", "vite.config.ts"]
 }

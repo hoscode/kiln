@@ -3,6 +3,7 @@ export * from './geom';
 export * from './noise';
 export * from './palettes';
 export * from './params';
+export * from './png';
 export * from './piece';
 export * from './prng';
 export * from './render';

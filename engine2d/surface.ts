@@ -15,12 +15,17 @@ export interface Style {
   join?: CanvasLineJoin;
 }
 
+/** A clip region is the union of circles and polygons. */
+export type ClipShape = { x: number; y: number; r: number } | readonly Vec2[];
+
 export interface Surface {
   readonly width: number;
   readonly height: number;
   background(color: string): void;
   path(points: readonly Vec2[], style: Style, closed?: boolean): void;
   circle(x: number, y: number, r: number, style: Style): void;
+  /** Draw inside the union of shapes only. */
+  clip(shapes: readonly ClipShape[], draw: () => void): void;
   /** Film/paper grain. Raster only; a no-op in SVG. */
   grain(amount: number): void;
 }
@@ -33,9 +38,13 @@ export class CanvasSurface implements Surface {
     readonly width: number,
     readonly height: number,
     private seed: number,
+    /** Full image width in pixels; differs from the canvas when rendering a strip. */
+    private pxWidth = ctx.canvas.width,
+    /** Pixel row of the full image at this canvas's top edge. */
+    private offsetY = 0,
   ) {
-    const scale = ctx.canvas.width / width;
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const scale = pxWidth / width;
+    ctx.setTransform(scale, 0, 0, scale, 0, -offsetY);
   }
 
   background(color: string) {
@@ -59,14 +68,35 @@ export class CanvasSurface implements Surface {
     this.paint(style);
   }
 
+  clip(shapes: readonly ClipShape[], draw: () => void) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.beginPath();
+    for (const s of shapes) {
+      if (isPoly(s)) {
+        if (s.length < 3) continue;
+        ctx.moveTo(s[0][0], s[0][1]);
+        for (let i = 1; i < s.length; i++) ctx.lineTo(s[i][0], s[i][1]);
+        ctx.closePath();
+      } else {
+        ctx.moveTo(s.x + s.r, s.y);
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      }
+    }
+    ctx.clip();
+    draw();
+    ctx.restore();
+  }
+
   grain(amount: number) {
     if (amount <= 0) return;
     const ctx = this.ctx;
     const pattern = ctx.createPattern(grainTile(this.seed), 'repeat');
     if (!pattern) return;
     const { width, height } = ctx.canvas;
-    // Keep grain a similar visual size between preview and large exports.
-    pattern.setTransform(new DOMMatrix().scale(Math.max(1, width / 1600)));
+    // Keep grain a similar visual size between preview and large exports,
+    // and aligned across strips.
+    pattern.setTransform(new DOMMatrix().translate(0, -this.offsetY).scale(Math.max(1, this.pxWidth / 1600)));
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'overlay';
@@ -96,7 +126,12 @@ export class CanvasSurface implements Surface {
   }
 }
 
+const isPoly = (s: ClipShape): s is readonly Vec2[] => Array.isArray(s);
+
+let grainCache: { seed: number; tile: OffscreenCanvas } | undefined;
+
 function grainTile(seed: number): OffscreenCanvas {
+  if (grainCache?.seed === seed) return grainCache.tile;
   const size = 512;
   const canvas = new OffscreenCanvas(size, size);
   const ctx = canvas.getContext('2d')!;
@@ -108,6 +143,7 @@ function grainTile(seed: number): OffscreenCanvas {
     img.data[i + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
+  grainCache = { seed, tile: canvas };
   return canvas;
 }
 
@@ -115,6 +151,7 @@ const f = (n: number) => String(Math.round(n * 100) / 100);
 
 export class SvgSurface implements Surface {
   private els: string[] = [];
+  private clipId = 0;
 
   constructor(
     readonly width: number,
@@ -135,6 +172,20 @@ export class SvgSurface implements Surface {
 
   circle(x: number, y: number, r: number, style: Style) {
     this.els.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}"${attrs(style)}/>`);
+  }
+
+  clip(shapes: readonly ClipShape[], draw: () => void) {
+    const id = `clip${this.clipId++}`;
+    const defs = shapes
+      .map((s) =>
+        isPoly(s)
+          ? `<path d="M${s.map(([x, y]) => `${f(x)} ${f(y)}`).join('L')}Z"/>`
+          : `<circle cx="${f(s.x)}" cy="${f(s.y)}" r="${f(s.r)}"/>`,
+      )
+      .join('');
+    this.els.push(`<clipPath id="${id}">${defs}</clipPath><g clip-path="url(#${id})">`);
+    draw();
+    this.els.push('</g>');
   }
 
   grain() {}
