@@ -1,4 +1,4 @@
-import { getPalette, hexToRgb, type FrameOptions, type Session } from '../engine2d';
+import { animationFor, getPalette, hexToRgb, type FrameOptions, type Session } from '../engine2d';
 import type { ShaderPiece } from './piece';
 import { MAIN, PRELUDE, paramUniforms } from './prelude';
 
@@ -39,11 +39,11 @@ export class GLSession implements Session {
 
     this.update(values, seed);
     gl.uniform2f(this.u('u_resolution'), width, height);
-    this.set1f('u_duration', piece.animation?.duration ?? 0);
     this.set1f('u_fps', piece.animation?.fps ?? 60);
   }
 
   update(values: Values, seed: number) {
+    this.set1f('u_duration', animationFor(this.piece, values)?.duration ?? 0);
     this.set1f('u_seed', seed);
     this.setParams(values);
   }

@@ -46,7 +46,7 @@ const EDGES: Record<string, Omit<Material, 'color'> & { color?: string }> = {
   matte: { roughness: 0.65, metal: 0 },
 };
 
-const FACE_ROUGHNESS: Record<SurfaceTexture, number> = { marble: 0.2, ceramic: 0.14, brushed: 0.36, plain: 0.45 };
+const FACE_ROUGHNESS: Record<SurfaceTexture, number> = { marble: 0.2, ceramic: 0.14, brushed: 0.36, plain: 0.45, matte: 0.85 };
 
 interface Tile {
   /** When each of the tile's two turns starts, in loop units; empty = never moves. */
@@ -61,7 +61,7 @@ export default defineScene({
   title: 'Penrose Flip',
   tags: ['3d', 'tiling', 'loop', 'broadcast'],
   aspect: 16 / 9,
-  animation: { duration: 16, fps: 30, loop: true },
+  animation: { duration: 60, fps: 30, loop: true, durationParam: 'duration' },
   params: {
     ...group('Camera', {
       drift: bool(true, 'Drift'),
@@ -74,6 +74,7 @@ export default defineScene({
       dof: num(0.35, 0, 1, 0.01, 'Depth of field'),
     }),
     ...group('Motion', {
+      duration: num(60, 8, 180, 1, 'Loop length (s)'),
       motion: choice(['ripple', 'assemble'], 'ripple'),
       pattern: choice(['grow', 'reaction', 'chain', 'cascade', ...WAVE_PATTERNS], 'grow', 'Order'),
       origin: choice(['random', 'center', 'edge'], 'random', 'Starts at'),
@@ -83,21 +84,22 @@ export default defineScene({
       lobes: num(1, 0, 3, 0.05),
       handoff: num(0.55, 0.15, 1.5, 0.01, 'Hand-off'),
       chance: num(0.75, 0.3, 1, 0.01, 'Spread chance'),
-      flipLength: num(0.035, 0.005, 0.45, 0.005, 'Flip length'),
-      sharpness: num(2.5, 1, 8, 0.1),
+      flipTime: num(3, 0.2, 8, 0.1, 'Flip time (s)'),
+      hold: num(4, 0, 30, 0.5, 'Hold (s)'),
+      sharpness: num(2, 1, 8, 0.1),
       jitter: num(0.3, 0, 1, 0.01),
-      lift: num(0.35, 0, 2, 0.05),
+      lift: num(0.2, 0, 2, 0.05),
     }),
     ...group('Signal', {
       glow: bool(false, 'Glow'),
       signal: num(1, 0, 4, 0.05, 'Strength'),
-      trail: num(0.05, 0.005, 0.4, 0.005, 'Trail'),
+      trail: num(2, 0.1, 10, 0.1, 'Trail (s)'),
       signalColor: color('#ffc46b', 'Color'),
       bloom: num(0.4, 0, 2, 0.05),
     }),
     ...group('Look', {
       palette: palette('midnight'),
-      texture: choice(['marble', 'ceramic', 'brushed', 'plain'], 'marble'),
+      texture: choice(['marble', 'matte', 'ceramic', 'brushed', 'plain'], 'marble'),
       edge: choice(['brass', 'steel', 'matte'], 'brass'),
       thickness: num(0.12, 0.03, 0.4, 0.005),
       bevel: num(0.45, 0, 1, 0.01),
@@ -129,9 +131,11 @@ export default defineScene({
           ? [rng.range(-1, 1) * radius * 0.6, rng.range(-1, 1) * radius * 0.4]
           : [0, 0];
 
-    // Timing per tile, in loop units. A pass must finish inside its half-loop.
-    const len = p.motion === 'ripple' ? p.flipLength : Math.min(p.flipLength, 0.24);
-    const window = (p.motion === 'ripple' ? 0.5 : 0.45) - len;
+    // Timing per tile, in loop units (settings are in seconds). Each pass moves,
+    // then holds still for `hold` before the next; it must fit its half-loop.
+    const len = Math.min(p.flipTime / p.duration, p.motion === 'ripple' ? 0.3 : 0.2);
+    const hold = Math.min(p.hold / p.duration, (p.motion === 'ripple' ? 0.45 : 0.4) - len);
+    const window = (p.motion === 'ripple' ? 0.5 : 0.45) - hold - len;
     const firstStart = new Float32Array(rhombi.length).fill(-1); // −1: never moves
     const parents = new Int32Array(rhombi.length).fill(-1);
     const directions: Vec2[] = rhombi.map(() => [1, 0]);
@@ -250,12 +254,12 @@ export default defineScene({
       environment: { sky: adjust(pal.bg, 0.2, 0.8), horizon: pal.bg, ground: adjust(pal.bg, -0.05) },
       glow: { color: p.signalColor, intensity: 3 },
       post: { exposure: p.exposure, vignette: 0.35, grain: p.grain, bloom: p.glow ? p.bloom : 0 },
-      data: { tiles, len },
+      data: { tiles, len, trail: p.trail / p.duration },
     };
   },
 
   animate({ p, phase }, scene, out) {
-    const { tiles, len } = scene.data;
+    const { tiles, len, trail } = scene.data;
     const k = p.sharpness;
     for (let i = 0; i < tiles.length; i++) {
       const { starts, axis, reach } = tiles[i];
@@ -280,7 +284,7 @@ export default defineScene({
       out.axis[i] = axis;
       out.lift[i] = Math.abs(Math.sin(angle)) * reach * (1 + p.lift) * scale;
       out.scale[i] = scale;
-      out.glow[i] = p.glow ? p.signal * Math.max(...starts.map((s) => signal(phase - s, len, p.trail))) * scale : 0;
+      out.glow[i] = p.glow ? p.signal * Math.max(...starts.map((s) => signal(phase - s, len, trail))) * scale : 0;
     }
   },
 });

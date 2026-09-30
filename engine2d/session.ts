@@ -4,7 +4,7 @@
 import { fract } from './anim';
 import { createNoise, type Noise } from './noise';
 import type { AnyPiece, PieceMeta, TimeContext } from './piece';
-import { UNITS } from './piece';
+import { animationFor, UNITS } from './piece';
 import { createRng, type Rng } from './prng';
 import { CanvasSurface, SvgSurface } from './surface';
 
@@ -44,8 +44,9 @@ export function timeContext(
   rng: Rng = createRng(seed),
   noise: Noise = noiseFor(seed),
 ): TimeContext<never> {
-  const fps = piece.animation?.fps ?? 60;
-  const duration = piece.animation?.duration ?? 0;
+  const anim = animationFor(piece, values);
+  const fps = anim?.fps ?? 60;
+  const duration = anim?.duration ?? 0;
   return {
     p: values as never,
     rng,

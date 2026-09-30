@@ -12,6 +12,16 @@ export interface Animation {
   fps: number;
   /** Frame `duration * fps` equals frame 0, so playback wraps seamlessly. */
   loop?: boolean;
+  /** Name of a number param (seconds) that overrides `duration`. */
+  durationParam?: string;
+}
+
+/** A piece's animation with param-driven overrides applied. */
+export function animationFor(piece: PieceMeta, values: Record<string, unknown>): Animation | undefined {
+  const a = piece.animation;
+  if (!a?.durationParam) return a;
+  const d = Number(values[a.durationParam]);
+  return Number.isFinite(d) && d > 0 ? { ...a, duration: d } : a;
 }
 
 /** Everything a piece knows about "when" and "where", minus the surface. */

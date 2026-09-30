@@ -3,7 +3,7 @@
 // per frame by writing flip / lift / scale into `Motion`.
 import type { ParamSchema, ParamValues, PieceMeta, TimeContext, Vec2 } from '../../engine2d';
 
-export type SurfaceTexture = 'plain' | 'marble' | 'brushed' | 'ceramic';
+export type SurfaceTexture = 'plain' | 'marble' | 'brushed' | 'ceramic' | 'matte';
 export type View = 'top' | 'isometric' | 'angled' | 'low';
 
 export interface Material {

@@ -1,6 +1,6 @@
 // App state and actions, shared by every panel. Components read `studio.*`
 // and call its methods instead of passing state through props.
-import { randomValues, resolve } from '../../../../engine2d';
+import { animationFor, randomValues, resolve } from '../../../../engine2d';
 import { pieces } from '../../../../pieces';
 import type { KilnPiece } from '../../../../runtime';
 import { deleteSnapshot, listSnapshots, saveSnapshot, thumbnail, type Snapshot } from './gallery';
@@ -33,7 +33,7 @@ class Studio {
   piece = $derived(this.modePieces.find((p) => p.id === this.pieceByMode[this.mode]) ?? this.modePieces[0] ?? pieces[0]);
   seed = $derived(this.seeds[this.piece.id] ?? 1);
   values = $derived(resolve(this.piece.params, this.stored[this.piece.id]));
-  anim = $derived(this.piece.animation);
+  anim = $derived(animationFor(this.piece, this.values));
 
   // --- playback ---
   time = $state(0);

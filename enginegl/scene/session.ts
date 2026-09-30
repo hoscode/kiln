@@ -1,4 +1,4 @@
-import { fract, hexToRgb, timeContext, type FrameOptions, type Session } from '../../engine2d';
+import { animationFor, fract, hexToRgb, timeContext, type FrameOptions, type Session } from '../../engine2d';
 import { FULLSCREEN_VS } from '../session';
 import { cameraState, lightMatrix, normalize, type CameraState, type Vec3 } from './camera';
 import { FLOATS_PER_VERTEX, groundMesh, slabMesh } from './mesh';
@@ -8,7 +8,7 @@ import { ACCUM_FS, DEPTH_FS, DEPTH_VS, POST_FS, SCENE_FS, SCENE_VS } from './sha
 type Values = Record<string, unknown>;
 
 const SHADOW_SIZE = 2048;
-const TEXTURES = { plain: 0, marble: 1, brushed: 2, ceramic: 3 } as const;
+const TEXTURES = { plain: 0, marble: 1, brushed: 2, ceramic: 3, matte: 4 } as const;
 
 const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const linear = (hex: string) => hexToRgb(hex).map(toLinear) as Vec3;
@@ -168,7 +168,7 @@ export class SceneSession implements Session {
   render(t: number, opts: FrameOptions = {}, offsetY = 0) {
     const gl = this.gl;
     const { scene } = this.built;
-    const anim = this.piece.animation;
+    const anim = animationFor(this.piece, this.values);
     const fps = anim?.fps ?? 60;
     const n = Math.max(1, Math.round(opts.samples ?? 1));
     const shutter = opts.shutter ?? 0.5;

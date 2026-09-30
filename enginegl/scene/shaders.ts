@@ -209,6 +209,12 @@ Surface material(float id, vec3 lp, float seed) {
     float speck = step(0.992, kiln_hash12(floor(q.xy * 70.0) + seed * 101.0));
     s.albedo *= (1.0 + glaze * 0.09 * k) * (1.0 - speck * 0.55 * k);
     s.rough = clamp(s.rough + glaze * 0.05 * k, 0.04, 1.0);
+  } else if (tex == 4) {
+    // Matte (stone, plaster, powder coat): faint mottling and fine grain, no sheen.
+    float mottle = kiln_snoise(q * 0.7) * 0.6 + kiln_snoise(q * 2.3) * 0.4;
+    float grain = kiln_snoise(vec3(q.xy * 28.0, seed * 7.0));
+    s.albedo *= (1.0 + mottle * 0.06 * k) * (1.0 + grain * 0.05 * k);
+    s.rough = clamp(s.rough + grain * 0.04 * k, 0.6, 1.0);
   }
   // Every tile slightly different, like real stone or glaze batches.
   s.albedo *= 1.0 + (seed - 0.5) * 0.1;
