@@ -1,4 +1,4 @@
-import type { Job, Request, Response } from './protocol';
+import type { Job, Quality, Request, Response, Result, VideoSettings } from './protocol';
 import RenderWorker from './render.worker?worker';
 
 interface Handlers {
@@ -6,14 +6,16 @@ interface Handlers {
   error(message: string): void;
 }
 
+type Progress = (done: number, total: number) => void;
+
 /**
  * Rendering off the main thread. Previews go to one long-lived worker with
  * latest-wins scheduling; each export gets its own worker so previews stay
- * live while a large image renders.
+ * live while a large image or video renders.
  */
 export class Renderer {
   private previewWorker = new RenderWorker();
-  private exporters = new Set<Worker>();
+  private exporters = new Map<Worker, (e: Error) => void>();
   private busy = false;
   private queued: Job | null = null;
   private nextId = 1;
@@ -37,17 +39,30 @@ export class Renderer {
     this.pump();
   }
 
-  png(job: Job, onProgress?: (done: number, total: number) => void): Promise<Blob> {
-    return this.oneShot<Blob>({ ...job, kind: 'png' }, onProgress);
+  png(job: Job & Quality, onProgress?: Progress) {
+    return this.oneShot({ ...job, kind: 'png' }, onProgress) as Promise<Extract<Result, { kind: 'png' }>>;
   }
 
-  svg(job: Job): Promise<string> {
-    return this.oneShot<string>({ ...job, kind: 'svg' });
+  svg(job: Job) {
+    return this.oneShot({ ...job, kind: 'svg' }) as Promise<Extract<Result, { kind: 'svg' }>>;
+  }
+
+  video(job: Job & VideoSettings, onProgress?: Progress) {
+    return this.oneShot({ ...job, kind: 'video' }, onProgress) as Promise<Extract<Result, { kind: 'video' | 'frames' }>>;
+  }
+
+  /** Abort all running exports. */
+  cancel() {
+    for (const [worker, reject] of this.exporters) {
+      worker.terminate();
+      reject(new Error('Cancelled'));
+    }
+    this.exporters.clear();
   }
 
   dispose() {
     this.previewWorker.terminate();
-    for (const w of this.exporters) w.terminate();
+    this.cancel();
   }
 
   private pump() {
@@ -58,26 +73,25 @@ export class Renderer {
     this.previewWorker.postMessage({ ...job, id: this.nextId++, kind: 'preview' } satisfies Request);
   }
 
-  private oneShot<T>(req: Omit<Request, 'id'>, onProgress?: (done: number, total: number) => void): Promise<T> {
+  private oneShot(req: Omit<Exclude<Request, { kind: 'preview' }>, 'id'>, onProgress?: Progress): Promise<Result> {
     const worker = new RenderWorker();
-    this.exporters.add(worker);
-    const done = () => {
-      worker.terminate();
-      this.exporters.delete(worker);
-    };
-    return new Promise<T>((resolve, reject) => {
+    return new Promise<Result>((resolve, reject) => {
+      this.exporters.set(worker, reject);
+      const done = () => {
+        worker.terminate();
+        this.exporters.delete(worker);
+      };
       worker.onmessage = ({ data }: MessageEvent<Response>) => {
         if (data.kind === 'progress') return onProgress?.(data.done, data.total);
         done();
-        if (data.kind === 'png') resolve(data.blob as T);
-        else if (data.kind === 'svg') resolve(data.svg as T);
-        else if (data.kind === 'error') reject(new Error(data.message));
+        if (data.kind === 'error') reject(new Error(data.message));
+        else if (data.kind !== 'preview') resolve(data);
       };
       worker.onerror = (e) => {
         done();
         reject(new Error(e.message));
       };
-      worker.postMessage({ ...req, id: this.nextId++ } satisfies Request);
+      worker.postMessage({ ...req, id: this.nextId++ } as Request);
     });
   }
 }

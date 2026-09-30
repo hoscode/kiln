@@ -3,7 +3,7 @@
 import type { Vec2 } from './geom';
 import { createRng } from './prng';
 
-export type Blend = 'source-over' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'soft-light';
+export type Blend = 'source-over' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'soft-light' | 'lighter';
 
 export interface Style {
   fill?: string;
@@ -24,6 +24,8 @@ export interface Surface {
   background(color: string): void;
   path(points: readonly Vec2[], style: Style, closed?: boolean): void;
   circle(x: number, y: number, r: number, style: Style): void;
+  /** Many line segments in one stroke: [x0, y0, x1, y1, x0, y0, …]. Fast for particles. */
+  segments(coords: ArrayLike<number>, style: Style): void;
   /** Draw inside the union of shapes only. */
   clip(shapes: readonly ClipShape[], draw: () => void): void;
   /** Film/paper grain. Raster only; a no-op in SVG. */
@@ -42,6 +44,8 @@ export class CanvasSurface implements Surface {
     private pxWidth = ctx.canvas.width,
     /** Pixel row of the full image at this canvas's top edge. */
     private offsetY = 0,
+    /** Animation frame; moves the grain so it shimmers like film instead of sitting on the glass. */
+    private frame = 0,
   ) {
     const scale = pxWidth / width;
     ctx.setTransform(scale, 0, 0, scale, 0, -offsetY);
@@ -65,6 +69,16 @@ export class CanvasSurface implements Surface {
   circle(x: number, y: number, r: number, style: Style) {
     this.ctx.beginPath();
     this.ctx.arc(x, y, r, 0, Math.PI * 2);
+    this.paint(style);
+  }
+
+  segments(coords: ArrayLike<number>, style: Style) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    for (let i = 0; i + 3 < coords.length; i += 4) {
+      ctx.moveTo(coords[i], coords[i + 1]);
+      ctx.lineTo(coords[i + 2], coords[i + 3]);
+    }
     this.paint(style);
   }
 
@@ -96,7 +110,10 @@ export class CanvasSurface implements Surface {
     const { width, height } = ctx.canvas;
     // Keep grain a similar visual size between preview and large exports,
     // and aligned across strips.
-    pattern.setTransform(new DOMMatrix().translate(0, -this.offsetY).scale(Math.max(1, this.pxWidth / 1600)));
+    const jx = this.frame ? (this.frame * 211) % 512 : 0;
+    const jy = this.frame ? (this.frame * 331) % 512 : 0;
+    const k = Math.max(1, this.pxWidth / 1600);
+    pattern.setTransform(new DOMMatrix().translate(-jx * k, -this.offsetY - jy * k).scale(k));
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'overlay';
@@ -174,6 +191,13 @@ export class SvgSurface implements Surface {
     this.els.push(`<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}"${attrs(style)}/>`);
   }
 
+  segments(coords: ArrayLike<number>, style: Style) {
+    let d = '';
+    for (let i = 0; i + 3 < coords.length; i += 4)
+      d += `M${f(coords[i])} ${f(coords[i + 1])}L${f(coords[i + 2])} ${f(coords[i + 3])}`;
+    if (d) this.els.push(`<path d="${d}"${attrs(style)}/>`);
+  }
+
   clip(shapes: readonly ClipShape[], draw: () => void) {
     const id = `clip${this.clipId++}`;
     const defs = shapes
@@ -203,6 +227,7 @@ function attrs(s: Style): string {
     a += ` stroke-linecap="${s.cap ?? 'round'}" stroke-linejoin="${s.join ?? 'round'}"`;
   }
   if (s.alpha !== undefined && s.alpha < 1) a += ` opacity="${Math.round(s.alpha * 1e4) / 1e4}"`;
-  if (s.blend && s.blend !== 'source-over') a += ` style="mix-blend-mode:${s.blend}"`;
+  if (s.blend && s.blend !== 'source-over')
+    a += ` style="mix-blend-mode:${s.blend === 'lighter' ? 'plus-lighter' : s.blend}"`;
   return a;
 }

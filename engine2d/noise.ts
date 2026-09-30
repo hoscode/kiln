@@ -6,12 +6,22 @@ export interface Noise {
   noise2(x: number, y: number): number;
   /** Simplex 3D in [-1, 1]. Use z as time for animated fields. */
   noise3(x: number, y: number, z: number): number;
+  /** Simplex 4D in [-1, 1]. */
+  noise4(x: number, y: number, z: number, w: number): number;
+  /**
+   * 2D noise that loops in time: phase ∈ [0, 1) walks a circle of the given
+   * radius through the extra dimensions, so phase 0 and 1 are identical.
+   */
+  loop2(x: number, y: number, phase: number, radius?: number): number;
   /** Fractal sum of noise2, normalized to roughly [-1, 1]. */
   fbm2(x: number, y: number, octaves?: number, lacunarity?: number, gain?: number): number;
   /** Divergence-free 2D flow from the gradient of noise2. */
   curl2(x: number, y: number, eps?: number): [number, number];
 }
 
+// 3D/4D kernels use r² = 0.5 (not the classic 0.6), which keeps the noise
+// continuous across simplex boundaries; 0.6 causes tiny jumps that flicker
+// in animation.
 const grad3 = new Float32Array([
   1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0,
   1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1,
@@ -22,6 +32,16 @@ const F2 = 0.5 * (Math.sqrt(3) - 1);
 const G2 = (3 - Math.sqrt(3)) / 6;
 const F3 = 1 / 3;
 const G3 = 1 / 6;
+const F4 = (Math.sqrt(5) - 1) / 4;
+const G4 = (5 - Math.sqrt(5)) / 20;
+
+// The 32 edge midpoints of a 4D hypercube.
+const grad4 = new Float32Array([
+  0, 1, 1, 1, 0, 1, 1, -1, 0, 1, -1, 1, 0, 1, -1, -1, 0, -1, 1, 1, 0, -1, 1, -1, 0, -1, -1, 1, 0, -1, -1, -1,
+  1, 0, 1, 1, 1, 0, 1, -1, 1, 0, -1, 1, 1, 0, -1, -1, -1, 0, 1, 1, -1, 0, 1, -1, -1, 0, -1, 1, -1, 0, -1, -1,
+  1, 1, 0, 1, 1, 1, 0, -1, 1, -1, 0, 1, 1, -1, 0, -1, -1, 1, 0, 1, -1, 1, 0, -1, -1, -1, 0, 1, -1, -1, 0, -1,
+  1, 1, 1, 0, 1, 1, -1, 0, 1, -1, 1, 0, 1, -1, -1, 0, -1, 1, 1, 0, -1, 1, -1, 0, -1, -1, 1, 0, -1, -1, -1, 0,
+]);
 
 export function createNoise(rng: Rng): Noise {
   const p = new Uint8Array(256);
@@ -102,18 +122,58 @@ export function createNoise(rng: Rng): Noise {
     const ii = i & 255, jj = j & 255, kk = k & 255;
 
     const corner = (g: number, x: number, y: number, z: number) => {
-      let tt = 0.6 - x * x - y * y - z * z;
+      let tt = 0.5 - x * x - y * y - z * z;
       if (tt < 0) return 0;
       tt *= tt;
       return tt * tt * (grad3[g * 3] * x + grad3[g * 3 + 1] * y + grad3[g * 3 + 2] * z);
     };
     return (
-      32 *
+      76 *
       (corner(permMod12[ii + perm[jj + perm[kk]]], x0, y0, z0) +
         corner(permMod12[ii + i1 + perm[jj + j1 + perm[kk + k1]]], x1, y1, z1) +
         corner(permMod12[ii + i2 + perm[jj + j2 + perm[kk + k2]]], x2, y2, z2) +
         corner(permMod12[ii + 1 + perm[jj + 1 + perm[kk + 1]]], x3, y3, z3))
     );
+  }
+
+  function noise4(x: number, y: number, z: number, w: number): number {
+    const s = (x + y + z + w) * F4;
+    const i = Math.floor(x + s), j = Math.floor(y + s), k = Math.floor(z + s), l = Math.floor(w + s);
+    const t = (i + j + k + l) * G4;
+    const x0 = x - (i - t), y0 = y - (j - t), z0 = z - (k - t), w0 = w - (l - t);
+
+    // Rank each coordinate to find which simplex we're in.
+    let rx = 0, ry = 0, rz = 0, rw = 0;
+    if (x0 > y0) rx++; else ry++;
+    if (x0 > z0) rx++; else rz++;
+    if (x0 > w0) rx++; else rw++;
+    if (y0 > z0) ry++; else rz++;
+    if (y0 > w0) ry++; else rw++;
+    if (z0 > w0) rz++; else rw++;
+
+    const ii = i & 255, jj = j & 255, kk = k & 255, ll = l & 255;
+    const corner = (di: number, dj: number, dk: number, dl: number, off: number) => {
+      const cx = x0 - di + off * G4, cy = y0 - dj + off * G4, cz = z0 - dk + off * G4, cw = w0 - dl + off * G4;
+      let tt = 0.5 - cx * cx - cy * cy - cz * cz - cw * cw;
+      if (tt < 0) return 0;
+      const g = (perm[ii + di + perm[jj + dj + perm[kk + dk + perm[ll + dl]]]] % 32) * 4;
+      tt *= tt;
+      return tt * tt * (grad4[g] * cx + grad4[g + 1] * cy + grad4[g + 2] * cz + grad4[g + 3] * cw);
+    };
+    const b = (r: number, n: number) => (r >= n ? 1 : 0);
+    return (
+      62 *
+      (corner(0, 0, 0, 0, 0) +
+        corner(b(rx, 3), b(ry, 3), b(rz, 3), b(rw, 3), 1) +
+        corner(b(rx, 2), b(ry, 2), b(rz, 2), b(rw, 2), 2) +
+        corner(b(rx, 1), b(ry, 1), b(rz, 1), b(rw, 1), 3) +
+        corner(1, 1, 1, 1, 4))
+    );
+  }
+
+  function loop2(x: number, y: number, phase: number, radius = 1): number {
+    const a = phase * Math.PI * 2;
+    return noise4(x, y, radius * Math.cos(a), radius * Math.sin(a));
   }
 
   function fbm2(x: number, y: number, octaves = 4, lacunarity = 2, gain = 0.5): number {
@@ -133,5 +193,5 @@ export function createNoise(rng: Rng): Noise {
     return [dy, -dx];
   }
 
-  return { noise2, noise3, fbm2, curl2 };
+  return { noise2, noise3, noise4, loop2, fbm2, curl2 };
 }

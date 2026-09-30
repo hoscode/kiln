@@ -1,15 +1,28 @@
 <script lang="ts">
+  import { canEncodeVideo, type VideoCodec } from 'mediabunny';
   import { onDestroy } from 'svelte';
-  import { pieces } from '../../../pieces/2d';
   import { randomValues, resolve } from '../../../engine2d';
+  import { pieces } from '../../../pieces';
+  import { isShader, videoSize } from '../../../runtime';
   import Gallery from './lib/Gallery.svelte';
   import { deleteSnapshot, listSnapshots, saveSnapshot, thumbnail, type Snapshot } from './lib/gallery';
   import ParamPanel from './lib/ParamPanel.svelte';
   import type { Job } from './lib/protocol';
   import { Renderer } from './lib/renderer';
+  import Transport from './lib/Transport.svelte';
   import { download, load, readHash, save, writeHash } from './lib/util';
 
   const EXPORT_SIZES = [2048, 4096, 8192, 16384];
+  const VIDEO_SIZES = [1280, 1920, 2560, 3840];
+  const VIDEO_FORMATS: { value: VideoCodec | 'frames'; label: string }[] = [
+    { value: 'avc', label: 'MP4 · H.264' },
+    { value: 'hevc', label: 'MP4 · HEVC' },
+    { value: 'av1', label: 'MP4 · AV1' },
+    { value: 'frames', label: 'PNG frames' },
+  ];
+  /** Mbps at 1080p60; scaled by pixel count and frame rate. */
+  const QUALITIES = { good: 16, high: 32, max: 64 } as const;
+  const SAMPLES = [1, 4, 8, 16, 32];
 
   // URL hash wins over saved state, so shared links open exactly.
   const saved = load();
@@ -31,10 +44,25 @@
   let error = $state('');
   let exportW = $state(4096);
   let busy = $state('');
+  let notice = $state('');
   let snapshots: Snapshot[] = $state([]);
   const pieceSnapshots = $derived(snapshots.filter((s) => s.pieceId === piece.id));
 
+  // Animation
+  const anim = $derived(piece.animation);
+  let time = $state(0);
+  let playing = $state(!!pieces.find((p) => p.id === pieceId)?.animation);
+  let liveFps = $state(0);
+  let samples = $state(8);
+  let shutter = $state(0.5);
+  let videoW = $state(1920);
+  let videoFormat: VideoCodec | 'frames' = $state('avc');
+  let quality: keyof typeof QUALITIES = $state('high');
+  let codecOk = $state(true);
+
   let bitmapCtx: ImageBitmapRenderingContext | null = null;
+  let fpsCount = 0;
+  let fpsSince = performance.now();
   const renderer = new Renderer({
     frame(bitmap, ms) {
       if (!canvas) return bitmap.close();
@@ -44,6 +72,13 @@
       bitmapCtx?.transferFromImageBitmap(bitmap);
       renderMs = ms;
       error = '';
+      fpsCount++;
+      const now = performance.now();
+      if (now - fpsSince >= 500) {
+        liveFps = (fpsCount * 1000) / (now - fpsSince);
+        fpsCount = 0;
+        fpsSince = now;
+      }
     },
     error(message) {
       error = message;
@@ -56,7 +91,26 @@
     .catch(() => {}); // no gallery API outside the dev server
 
   function job(pxWidth: number): Job {
-    return { pieceId: piece.id, values: $state.snapshot(values), seed, pxWidth };
+    return { pieceId: piece.id, values: $state.snapshot(values), seed, pxWidth, t: time };
+  }
+
+  function selectPiece(id: string) {
+    pieceId = id;
+    time = 0;
+    playing = !!pieces.find((p) => p.id === id)?.animation;
+  }
+
+  function seek(t: number) {
+    playing = false;
+    time = Math.min(anim?.duration ?? 0, Math.max(0, t));
+  }
+
+  function stepFrame(n: number) {
+    if (anim) seek(Math.round(time * anim.fps + n) / anim.fps);
+  }
+
+  function bitrate(width: number, height: number) {
+    return QUALITIES[quality] * 1e6 * ((width * height) / (1920 * 1080)) * ((anim?.fps ?? 60) / 60);
   }
 
   function setSeed(s: number) {
@@ -80,6 +134,46 @@
     writeHash(piece.id, seed, $state.snapshot(stored[piece.id]));
   });
 
+  // Playback clock. Rendering is latest-wins, so slow pieces drop preview
+  // frames but stay in time; exports are always frame-exact.
+  $effect(() => {
+    const a = anim;
+    if (!playing || !a) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      let next = time + (now - last) / 1000;
+      last = now;
+      if (next >= a.duration) {
+        if (a.loop) next %= a.duration;
+        else {
+          next = a.duration;
+          playing = false;
+        }
+      }
+      time = next;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  });
+
+  $effect(() => {
+    const format = videoFormat;
+    if (!anim || format === 'frames') {
+      codecOk = true;
+      return;
+    }
+    const { width, height } = videoSize(videoW, piece.aspect);
+    let alive = true;
+    canEncodeVideo(format, { width, height, bitrate: bitrate(width, height) })
+      .then((ok) => alive && (codecOk = ok))
+      .catch(() => alive && (codecOk = false));
+    return () => {
+      alive = false;
+    };
+  });
+
   $effect(() => {
     if (!stageW || !stageH) return;
     const pad = 48;
@@ -91,8 +185,12 @@
     const w = exportW;
     busy = `PNG ${w}px…`;
     try {
-      const blob = await renderer.png(job(w), (done, total) => (busy = `PNG ${w}px · strip ${done}/${total}`));
-      download(blob, `${piece.id}-${seed}-${w}.png`);
+      const { blob } = await renderer.png(
+        { ...job(w), samples: anim ? samples : 1, shutter },
+        (done, total) => (busy = `PNG ${w}px · strip ${done}/${total}`),
+      );
+      const frame = anim ? `-f${Math.round(time * anim.fps)}` : '';
+      download(blob, `${piece.id}-${seed}${frame}-${w}.png`);
     } catch (e) {
       error = `PNG export failed: ${e instanceof Error ? e.message : e}`;
     } finally {
@@ -103,10 +201,47 @@
   async function exportSvg() {
     busy = 'SVG…';
     try {
-      const svg = await renderer.svg(job(0));
+      const { svg } = await renderer.svg(job(0));
       download(new Blob([svg], { type: 'image/svg+xml' }), `${piece.id}-${seed}.svg`);
     } catch (e) {
       error = `SVG export failed: ${e instanceof Error ? e.message : e}`;
+    } finally {
+      busy = '';
+    }
+  }
+
+  async function exportVideo() {
+    if (!anim) return;
+    const format = videoFormat;
+    const { width, height } = videoSize(videoW, piece.aspect);
+    const name = `${piece.id}-${seed}-${Date.now().toString(36)}`;
+    const started = performance.now();
+    busy = 'Video…';
+    notice = '';
+    try {
+      const res = await renderer.video(
+        {
+          ...job(videoW),
+          t: 0,
+          fps: anim.fps,
+          duration: anim.duration,
+          samples,
+          shutter,
+          format: format === 'frames' ? 'frames' : 'mp4',
+          codec: format === 'frames' ? 'avc' : format,
+          bitrate: bitrate(width, height),
+          name,
+        },
+        (done, total) => {
+          const left = ((performance.now() - started) / done) * (total - done);
+          busy = `Video · frame ${done}/${total} · ~${Math.ceil(left / 1000)}s left`;
+        },
+      );
+      if (res.kind === 'video') download(res.blob, `${name}.mp4`);
+      else
+        notice = `Saved ${res.count} frames to ${res.dir}/. ProRes master:\nffmpeg -framerate ${anim.fps} -i ${res.dir}/%05d.png -c:v prores_ks -profile:v 3 ${name}.mov`;
+    } catch (e) {
+      if (!(e instanceof Error && e.message === 'Cancelled')) error = `Video export failed: ${e instanceof Error ? e.message : e}`;
     } finally {
       busy = '';
     }
@@ -123,7 +258,7 @@
   }
 
   function restore(s: Snapshot) {
-    pieceId = s.pieceId;
+    selectPiece(s.pieceId);
     seeds[s.pieceId] = s.seed;
     stored[s.pieceId] = { ...s.values };
   }
@@ -141,6 +276,9 @@
     else if (e.key === 'r') setSeed(Math.floor(Math.random() * 1e6));
     else if (e.key === 'd') diceParams();
     else if (e.key === 's') saveCurrent();
+    else if (e.key === ' ' && anim) playing = !playing;
+    else if (e.key === ',') stepFrame(-1);
+    else if (e.key === '.') stepFrame(1);
     else return;
     e.preventDefault();
   }
@@ -153,7 +291,7 @@
     <h1>kiln</h1>
     <nav>
       {#each pieces as p (p.id)}
-        <button class:active={p.id === piece.id} onclick={() => (pieceId = p.id)}>
+        <button class:active={p.id === piece.id} onclick={() => selectPiece(p.id)}>
           <span>{p.title}</span>
           {#if p.tags}<small>{p.tags.join(' · ')}</small>{/if}
         </button>
@@ -161,7 +299,8 @@
     </nav>
     <footer>
       <kbd>←</kbd><kbd>→</kbd> seed · <kbd>R</kbd> random seed<br />
-      <kbd>D</kbd> dice params · <kbd>S</kbd> save
+      <kbd>D</kbd> dice params · <kbd>S</kbd> save<br />
+      <kbd>Space</kbd> play · <kbd>,</kbd><kbd>.</kbd> frame
     </footer>
   </aside>
 
@@ -173,6 +312,18 @@
       </div>
       {#if error}<pre class="error">{error}</pre>{/if}
     </div>
+    {#if anim}
+      <Transport
+        {time}
+        duration={anim.duration}
+        fps={anim.fps}
+        loop={!!anim.loop}
+        {playing}
+        {liveFps}
+        ontoggle={() => (playing = !playing)}
+        onseek={seek}
+      />
+    {/if}
     <Gallery items={pieceSnapshots} onselect={restore} ondelete={removeSnapshot} />
   </main>
 
@@ -198,17 +349,71 @@
       <ParamPanel schema={piece.params} {values} onchange={setParam} />
     </section>
 
+    {#if anim}
+      <section>
+        <h2>Motion blur</h2>
+        <div class="grid">
+          <span>Samples</span>
+          <select bind:value={samples}>
+            {#each SAMPLES as n (n)}<option value={n}>{n === 1 ? 'Off' : `${n} sub-frames`}</option>{/each}
+          </select>
+          <span>Shutter</span>
+          <span class="inline">
+            <input type="range" min="0" max="1" step="0.05" bind:value={shutter} disabled={samples === 1} />
+            <small>{Math.round(shutter * 360)}°</small>
+          </span>
+        </div>
+      </section>
+    {/if}
+
     <section>
-      <h2>Export</h2>
+      <h2>{anim ? 'Still' : 'Export'}</h2>
       <div class="export">
         <select bind:value={exportW}>
           {#each EXPORT_SIZES as w (w)}<option value={w}>{w}px</option>{/each}
         </select>
         <button onclick={exportPng} disabled={!!busy}>PNG</button>
-        <button onclick={exportSvg} disabled={!!busy}>SVG</button>
+        <button onclick={exportSvg} disabled={!!busy || isShader(piece)}>SVG</button>
         <button onclick={saveCurrent}>Save</button>
       </div>
     </section>
+
+    {#if anim}
+      <section>
+        <h2>Video</h2>
+        <div class="grid">
+          <span>Width</span>
+          <select bind:value={videoW}>
+            {#each VIDEO_SIZES as w (w)}<option value={w}>{w}px</option>{/each}
+          </select>
+          <span>Format</span>
+          <select bind:value={videoFormat}>
+            {#each VIDEO_FORMATS as f (f.value)}<option value={f.value}>{f.label}</option>{/each}
+          </select>
+          {#if videoFormat !== 'frames'}
+            <span>Quality</span>
+            <select bind:value={quality}>
+              {#each Object.keys(QUALITIES) as q (q)}<option value={q}>{q}</option>{/each}
+            </select>
+          {/if}
+        </div>
+        {#if !codecOk}<p class="warn">This browser can't encode that codec at this size.</p>{/if}
+        <p class="hint">
+          {Math.round(anim.duration * anim.fps)} frames at {anim.fps} fps{samples > 1 ? `, ${samples}× sub-frames each` : ''}.
+        </p>
+        <div class="export">
+          {#if busy}
+            <button onclick={() => renderer.cancel()}>Cancel</button>
+          {:else}
+            <button class="primary" onclick={exportVideo} disabled={!codecOk}>Render video</button>
+          {/if}
+        </div>
+      </section>
+    {/if}
+
+    {#if notice}
+      <pre class="notice">{notice}</pre>
+    {/if}
   </aside>
 </div>
 
@@ -287,7 +492,7 @@
   }
   .stage {
     display: grid;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr auto auto;
     min-width: 0;
     min-height: 0;
     background: var(--stage);
@@ -339,5 +544,49 @@
   }
   .export select {
     flex: 1;
+  }
+  .export .primary {
+    flex: 1;
+    background: var(--accent);
+    color: #1a1406;
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .inline {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .inline input {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+  .hint,
+  .warn {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  .warn {
+    color: var(--error);
+  }
+  .notice {
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: var(--hover);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    margin: 0;
   }
 </style>

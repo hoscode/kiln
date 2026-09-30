@@ -55,8 +55,11 @@ render:  (params, seed, t, target) -> image / svg / scene
 kiln/
   PLAN.md
   apps/ui/            web UI (Vite + TS) — shell, param panels, gallery
-  engine2d/           TS: canvas/SVG/WebGPU renderer, PRNG, noise, palettes, export
+  engine2d/           TS: canvas/SVG renderer, PRNG, noise, palettes, params, sessions
+  enginegl/           TS: WebGL2 shader pieces (GLSL prelude, uniforms from params)
+  runtime/            engine-agnostic: sessions → PNG / MP4 / PNG sequence
   pieces/2d/          2D pieces (one folder each)
+  pieces/shader/      shader pieces (index.ts + .frag)
   worker3d/           Python: render server, bpy/Cycles scene builders, OIDN, OCIO
   kernels/            Mojo: SDF grids, meshing, attractors, sims, volumes
   pieces/3d/          3D pieces (Python + optional Mojo kernels)
@@ -103,6 +106,19 @@ kiln/
 - [x] URL hash state for sharing a specific variation
 - [ ] Restore a variation by dropping an exported PNG (read the embedded metadata)
 
+### M1.5 — Animation
+- [x] Piece contract: `animation { duration, fps, loop }`; stateless `draw(t)` or simulation `setup/step/draw`; `persist` canvases for trails
+- [x] Loop tools: 4D simplex + `loop2` (seamless noise loops), `ease`, `delayed`, `pingpong`; continuous r²=0.5 simplex kernels (no flicker)
+- [x] Shader engine (`enginegl/`): Shadertoy-style GLSL pieces, uniforms from the param schema, in-shader supersampling
+- [x] Motion blur: stratified sub-frames averaged in linear light (2D and shader)
+- [x] Transport: play/pause, scrub, frame step, live fps
+- [x] Video export: frame-exact MP4 (H.264 / HEVC / AV1 via WebCodecs + mediabunny) or PNG sequence to `renders/<name>/`
+- [x] Demo pieces: tile wave (loop), particle flow (simulation), gyroid (raymarched shader)
+- [ ] Shader pieces as multi-pass (feedback buffers for reaction-diffusion, fluid, trails on GPU)
+- [ ] WebGPU compute path for 100k+ particle simulations
+- [ ] Param keyframes on the timeline
+- [ ] Audio track / audio-reactive pieces
+
 ### M2 — 3D worker
 - [ ] Python render worker (HTTP/WebSocket) with job queue
 - [ ] Scene builder helpers: camera, HDRI, lights, materials (glass, metal, iridescent, subsurface)
@@ -119,8 +135,7 @@ kiln/
 - [ ] MCP server: `list_pieces`, `get_params`, `set_params`, `render_preview`, `edit_piece`
 - [ ] Claude can see previews and iterate on params with us
 
-### M5 — Animation + interactivity
-- [ ] Timeline, param keyframes, frame-exact video export (WebCodecs / ffmpeg)
+### M5 — Interactivity
 - [ ] Interactive pieces (mouse / input-driven), standalone shareable build per piece
 
 ### M6 — Sell-ready output

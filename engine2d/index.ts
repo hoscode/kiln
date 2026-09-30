@@ -1,3 +1,4 @@
+export * from './anim';
 export * from './color';
 export * from './geom';
 export * from './noise';
@@ -6,5 +7,5 @@ export * from './params';
 export * from './png';
 export * from './piece';
 export * from './prng';
-export * from './render';
+export * from './session';
 export * from './surface';
