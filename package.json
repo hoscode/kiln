@@ -1,0 +1,21 @@
+{
+  "name": "studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "render:svg": "tsx scripts/render-svg.ts"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@types/node": "^26.6.3",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
+  }
+}
