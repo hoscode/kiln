@@ -3,33 +3,12 @@
 // uniforms, helpers and a `main` that supersamples for AA + motion blur.
 import type { ParamSchema } from '../engine2d';
 
-export const PRELUDE = /* glsl */ `#version 300 es
-precision highp float;
-precision highp int;
-
-uniform vec2 u_resolution;   // full image size in pixels
-uniform vec2 u_offset;       // this tile's origin within the full image (bottom-left, px)
-uniform float u_time;        // frame time, seconds
-uniform float u_duration;    // loop length, seconds (0 for stills)
-uniform float u_fps;
-uniform float u_frame;
-uniform float u_seed;
-uniform int u_samples;       // sub-samples per pixel
-uniform float u_shutter;     // fraction of a frame the shutter stays open
-
-out vec4 kiln_out;
-
-// Time of the current sub-sample; use iTime / iPhase rather than u_time.
-float kiln_t;
-
+/** Hashing, color and noise helpers, shared by every GPU engine. */
+export const GLSL_HELPERS = /* glsl */ `
+#ifndef PI
 #define PI 3.14159265359
 #define TAU 6.28318530718
-#define iResolution vec3(u_resolution, 1.0)
-#define iTime kiln_t
-#define iFrame int(u_frame)
-#define iPhase (u_duration > 0.0 ? fract(kiln_t / u_duration) : 0.0)
-
-// --- helpers -------------------------------------------------------------
+#endif
 
 float kiln_hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -90,6 +69,34 @@ float kiln_snoise(vec3 v) {
 
 mat2 kiln_rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 `;
+
+export const PRELUDE = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform vec2 u_resolution;   // full image size in pixels
+uniform vec2 u_offset;       // this tile's origin within the full image (bottom-left, px)
+uniform float u_time;        // frame time, seconds
+uniform float u_duration;    // loop length, seconds (0 for stills)
+uniform float u_fps;
+uniform float u_frame;
+uniform float u_seed;
+uniform int u_samples;       // sub-samples per pixel
+uniform float u_shutter;     // fraction of a frame the shutter stays open
+
+out vec4 kiln_out;
+
+// Time of the current sub-sample; use iTime / iPhase rather than u_time.
+float kiln_t;
+
+#define PI 3.14159265359
+#define TAU 6.28318530718
+#define iResolution vec3(u_resolution, 1.0)
+#define iTime kiln_t
+#define iFrame int(u_frame)
+#define iPhase (u_duration > 0.0 ? fract(kiln_t / u_duration) : 0.0)
+
+` + GLSL_HELPERS;
 
 export const MAIN = /* glsl */ `
 void main() {

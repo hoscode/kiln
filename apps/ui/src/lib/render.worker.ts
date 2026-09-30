@@ -1,7 +1,7 @@
 import type { Session } from '../../../../engine2d';
 import { renderToSvg } from '../../../../engine2d';
 import { pieces } from '../../../../pieces';
-import { createSession, isShader, renderFrames, renderPng, renderVideo, type KilnPiece } from '../../../../runtime';
+import { createSession, is2D, renderFrames, renderPng, renderVideo, type KilnPiece } from '../../../../runtime';
 import type { Request, Response } from './protocol';
 
 // The tsconfig uses DOM types, so describe the worker scope we use.
@@ -60,7 +60,7 @@ scope.onmessage = async ({ data: req }) => {
         break;
       }
       case 'svg': {
-        if (isShader(piece)) throw new Error('Shader pieces have no SVG output');
+        if (!is2D(piece)) throw new Error('Only 2D pieces have SVG output');
         scope.postMessage({ id, kind: 'svg', svg: renderToSvg(piece, req.values, req.seed, req.t), ms: ms() });
         break;
       }

@@ -73,3 +73,14 @@ in `renders/<name>/`.
 `u_<key>` (palettes: `u_<key>[8]`, `u_<key>_n`, `u_<key>_bg`, `u_<key>_ink`).
 `iTime`, `iPhase`, `iResolution`, `kiln_snoise`, `kiln_hash12`, `kiln_rot`
 are in scope; see `enginegl/prelude.ts`.
+
+## Scene pieces (3D tiles)
+
+`pieces/scene/<id>/index.ts` uses `defineScene`. `build()` returns the tiles
+(convex outlines, instances, materials, camera, light) once per params/seed.
+`animate()` writes each tile's `flip`, `axis`, `lift` and `scale` every frame.
+The engine handles shading, shadows, textures, the camera views, and motion
+blur / depth of field. Reusable helpers:
+
+- `penroseP3(generations)`: Penrose rhombus tiling, edge length 1
+- `waveField(pattern, { radius })` + `act` / `stagger`: who moves when, eased

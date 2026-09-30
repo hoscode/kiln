@@ -1,4 +1,5 @@
 export * from './anim';
+export * from './choreo';
 export * from './color';
 export * from './geom';
 export * from './noise';
@@ -9,3 +10,5 @@ export * from './piece';
 export * from './prng';
 export * from './session';
 export * from './surface';
+export * from './tilings/graph';
+export * from './tilings/penrose';

@@ -13,6 +13,9 @@ export const palettes: Record<string, Palette> = {
   nord: { bg: '#2e3440', ink: '#eceff4', colors: ['#88c0d0', '#81a1c1', '#5e81ac', '#bf616a', '#d08770', '#ebcb8b', '#a3be8c'] },
   noir: { bg: '#0e0e10', ink: '#f5f5f0', colors: ['#f5f5f0', '#bdbdb5', '#7c7c76', '#d4a373'] },
   moss: { bg: '#e9ede4', ink: '#1e2a1f', colors: ['#2d3a2e', '#4f6d4a', '#8aa37b', '#c9b88a', '#a05c3b'] },
+  midnight: { bg: '#0b1624', ink: '#dfe6ee', colors: ['#1c2e44', '#34506e', '#8aa3bb', '#e2e8ee', '#c7a15a'] },
+  marble: { bg: '#e8e3da', ink: '#26262a', colors: ['#f3f0ea', '#2b2b2f', '#b9ab90', '#5d6b78'] },
+  graphite: { bg: '#141416', ink: '#ececec', colors: ['#2a2a2e', '#4a4a50', '#a3a3ab', '#e6e2da', '#b3864f'] },
   ocean: { bg: '#f1f4f2', ink: '#0b1d2a', colors: ['#0b3954', '#087e8b', '#bfd7ea', '#ff5a5f', '#c81d25'] },
 };
 

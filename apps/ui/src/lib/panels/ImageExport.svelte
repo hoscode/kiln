@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { isShader } from '../../../../../runtime';
+  import { is2D } from '../../../../../runtime';
   import { studio } from '../studio.svelte';
   import Button from '../ui/Button.svelte';
   import Field from '../ui/Field.svelte';
@@ -35,7 +35,7 @@
   <p class="hint">{width} × {height}px PNG, rendered in strips, params embedded.</p>
   <div class="row">
     <Button variant="primary" grow disabled={!!studio.task} onclick={png}>Export PNG</Button>
-    <Button disabled={!!studio.task || isShader(studio.piece)} title="Vector, for plotters" onclick={svg}>SVG</Button>
+    <Button disabled={!!studio.task || !is2D(studio.piece)} title="Vector, for plotters" onclick={svg}>SVG</Button>
   </div>
   <Button title="Save to gallery (S)" onclick={() => studio.saveSnapshot()}>Save to gallery</Button>
 </Section>

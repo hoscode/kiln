@@ -1,13 +1,16 @@
 // Engine-agnostic glue: any kiln piece → a Session → stills or video.
 import { BufferTarget, CanvasSource, Mp4OutputFormat, Output, type VideoCodec } from 'mediabunny';
 import { Canvas2DSession, createPngWriter, type AnyPiece, type FrameOptions, type Session } from '../engine2d';
-import { GLSession, type ShaderPiece } from '../enginegl';
+import { GLSession, SceneSession, type ScenePiece, type ShaderPiece } from '../enginegl';
 
 type Values = Record<string, unknown>;
 
-export type KilnPiece = AnyPiece | ShaderPiece;
+export type KilnPiece = AnyPiece | ShaderPiece | ScenePiece<any, any>;
 
 export const isShader = (p: KilnPiece): p is ShaderPiece => p.engine === 'shader';
+export const isScene = (p: KilnPiece): p is ScenePiece => p.engine === 'scene';
+/** Canvas/SVG pieces — the only ones with vector output. */
+export const is2D = (p: KilnPiece): p is AnyPiece => !p.engine || p.engine === '2d';
 
 export function createSession(
   piece: KilnPiece,
@@ -17,9 +20,9 @@ export function createSession(
   height: number,
   tileHeight = height,
 ): Session {
-  return isShader(piece)
-    ? new GLSession(piece, values, seed, width, height, tileHeight)
-    : new Canvas2DSession(piece, values, seed, width, height, tileHeight);
+  if (isShader(piece)) return new GLSession(piece, values, seed, width, height, tileHeight);
+  if (isScene(piece)) return new SceneSession(piece, values, seed, width, height, tileHeight);
+  return new Canvas2DSession(piece as AnyPiece, values, seed, width, height, tileHeight);
 }
 
 export interface Progress {

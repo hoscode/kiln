@@ -5,7 +5,7 @@ import { MAIN, PRELUDE, paramUniforms } from './prelude';
 type Values = Record<string, unknown>;
 
 // Full-screen triangle, no buffers needed.
-const VERTEX = `#version 300 es
+export const FULLSCREEN_VS = `#version 300 es
 void main() {
   vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
@@ -134,7 +134,7 @@ export class GLSession implements Session {
       return s;
     };
     // `#line 1` makes error line numbers match the piece's own .frag file.
-    const vs = shader(gl.VERTEX_SHADER, VERTEX, 'Vertex');
+    const vs = shader(gl.VERTEX_SHADER, FULLSCREEN_VS, 'Vertex');
     const fs = shader(gl.FRAGMENT_SHADER, `${head}${this.piece.fragment}\n${MAIN}`, 'Fragment');
     const program = gl.createProgram()!;
     gl.attachShader(program, vs);

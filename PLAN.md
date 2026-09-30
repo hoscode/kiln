@@ -57,9 +57,11 @@ kiln/
   apps/ui/            web UI (Vite + TS) — shell, param panels, gallery
   engine2d/           TS: canvas/SVG renderer, PRNG, noise, palettes, params, sessions
   enginegl/           TS: WebGL2 shader pieces (GLSL prelude, uniforms from params)
+  enginegl/scene/     TS: WebGL2 3D tile engine (instanced slabs, PBR, shadows, cameras)
   runtime/            engine-agnostic: sessions → PNG / MP4 / PNG sequence
   pieces/2d/          2D pieces (one folder each)
   pieces/shader/      shader pieces (index.ts + .frag)
+  pieces/scene/       3D scene pieces
   worker3d/           Python: render server, bpy/Cycles scene builders, OIDN, OCIO
   kernels/            Mojo: SDF grids, meshing, attractors, sims, volumes
   pieces/3d/          3D pieces (Python + optional Mojo kernels)
@@ -118,6 +120,16 @@ kiln/
 - [ ] WebGPU compute path for 100k+ particle simulations
 - [ ] Param keyframes on the timeline
 - [ ] Audio track / audio-reactive pieces
+
+### M1.6 — Scene engine (real-time 3D for video)
+- [x] `enginegl/scene`: instanced beveled slabs, GGX/Fresnel shading, studio environment, soft key-light shadows, top-down contact occlusion, procedural marble / ceramic / brushed textures
+- [x] Views: top, isometric (ortho), angled, low (perspective + depth of field); sway / orbit per loop
+- [x] One accumulation loop gives AA + motion blur + depth of field; HDR half-float, ACES tone map, vignette, grain
+- [x] Reusable: `engine2d/tilings/penrose.ts` (P3 rhombi), `engine2d/choreo.ts` (wave fields + staggered eased actions)
+- [x] Piece: Penrose Flip (ripple / assemble)
+- [ ] More tilings: hex, Truchet, Cairo, Ammann–Beenker
+- [ ] Glass / subsurface materials, bloom, screen-space reflections
+- [ ] `npm run check:glsl` (glslang) in CI
 
 ### M2 — 3D worker
 - [ ] Python render worker (HTTP/WebSocket) with job queue
