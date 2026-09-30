@@ -1,6 +1,6 @@
-# Studio — Plan
+# kiln — Plan
 
-A personal, open-source, AI-native studio for programmable art: 2D generative
+A personal, open-source, AI-native kiln for programmable art: 2D generative
 drawings, interactive mathematical objects, and path-traced 3D renders at
 print quality. Built for fun first, and good enough to sell.
 
@@ -52,7 +52,7 @@ render:  (params, seed, t, target) -> image / svg / scene
 ### Repo layout (target)
 
 ```
-studio/
+kiln/
   PLAN.md
   apps/ui/            web UI (Vite + TS) — shell, param panels, gallery
   engine2d/           TS: canvas/SVG/WebGPU renderer, PRNG, noise, palettes, export
@@ -60,7 +60,7 @@ studio/
   worker3d/           Python: render server, bpy/Cycles scene builders, OIDN, OCIO
   kernels/            Mojo: SDF grids, meshing, attractors, sims, volumes
   pieces/3d/          3D pieces (Python + optional Mojo kernels)
-  mcp/                MCP server exposing the studio to Claude
+  mcp/                MCP server exposing kiln to Claude
   references/         notes + links on pieces we want to recreate
   renders/            outputs (gitignored)
 ```

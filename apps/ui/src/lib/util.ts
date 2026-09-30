@@ -1,4 +1,4 @@
-const KEY = 'studio:v1';
+const KEY = 'kiln:v1';
 
 export interface Saved {
   pieceId?: string;

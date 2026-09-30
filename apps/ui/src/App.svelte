@@ -95,7 +95,7 @@
 
 <div class="app">
   <aside class="side">
-    <h1>studio</h1>
+    <h1>kiln</h1>
     <nav>
       {#each pieces as p (p.id)}
         <button class:active={p.id === piece.id} onclick={() => (pieceId = p.id)}>

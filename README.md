@@ -1,6 +1,6 @@
-# studio
+# kiln
 
-An AI-native, open-source studio for programmable art: 2D generative
+An AI-native, open-source kiln for programmable art: 2D generative
 drawings, interactive math objects, and path-traced 3D renders.
 
 See [PLAN.md](PLAN.md) for architecture and milestones.
