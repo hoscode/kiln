@@ -1,27 +1,18 @@
 <script lang="ts">
-  import type { Snapshot } from './gallery';
-
-  let {
-    items,
-    onselect,
-    ondelete,
-  }: {
-    items: Snapshot[];
-    onselect: (s: Snapshot) => void;
-    ondelete: (s: Snapshot) => void;
-  } = $props();
+  import { studio } from '../studio.svelte';
+  import Kbd from '../ui/Kbd.svelte';
 </script>
 
 <div class="strip">
-  {#each items as s (s.id)}
+  {#each studio.pieceSnapshots as s (s.id)}
     <div class="item">
-      <button class="thumb" onclick={() => onselect(s)} title="seed {s.seed} · {new Date(s.createdAt).toLocaleString()}">
+      <button class="thumb" onclick={() => studio.restore(s)} title="seed {s.seed} · {new Date(s.createdAt).toLocaleString()}">
         <img src={s.thumb} alt="seed {s.seed}" loading="lazy" />
       </button>
-      <button class="del" onclick={() => ondelete(s)} aria-label="Delete snapshot">×</button>
+      <button class="del" onclick={() => studio.removeSnapshot(s)} aria-label="Delete snapshot">×</button>
     </div>
   {:else}
-    <p class="empty">Press <kbd>S</kbd> to save a variation here.</p>
+    <p class="empty">Press <Kbd>S</Kbd> to keep a variation here.</p>
   {/each}
 </div>
 
@@ -29,11 +20,11 @@
   .strip {
     display: flex;
     gap: 8px;
-    padding: 10px 14px;
+    padding: 10px var(--pad);
     overflow-x: auto;
     border-top: 1px solid var(--border);
     background: var(--panel);
-    min-height: 92px;
+    height: 84px;
     align-items: center;
   }
   .item {
@@ -53,16 +44,23 @@
   }
   img {
     display: block;
-    height: 72px;
+    height: 62px;
     width: auto;
   }
   .del {
+    all: unset;
+    cursor: pointer;
     position: absolute;
-    top: 2px;
-    right: 2px;
-    padding: 0 5px;
+    top: 3px;
+    right: 3px;
+    width: 16px;
+    height: 16px;
+    text-align: center;
+    line-height: 15px;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.6);
+    color: #fff;
     font-size: 12px;
-    line-height: 16px;
     opacity: 0;
   }
   .item:hover .del {
@@ -71,12 +69,6 @@
   .empty {
     margin: 0;
     color: var(--muted);
-    font-size: 12px;
-  }
-  kbd {
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0 4px;
-    font-family: inherit;
+    font-size: var(--text-sm);
   }
 </style>

@@ -1,7 +1,8 @@
-const KEY = 'kiln:v1';
+const KEY = 'kiln:v2';
 
 export interface Saved {
-  pieceId?: string;
+  mode?: 'image' | 'video';
+  pieceByMode?: Partial<Record<'image' | 'video', string>>;
   seeds?: Record<string, number>;
   values?: Record<string, Record<string, unknown>>;
 }

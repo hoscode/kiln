@@ -1,15 +1,29 @@
+/* Design tokens. Components use these; nothing hard-codes colors or sizes. */
 :root {
-  --bg: #111113;
-  --panel: #18181b;
-  --stage: #0c0c0e;
-  --border: #2a2a2f;
-  --hover: #222227;
-  --active: #2b2b33;
-  --text: #e8e6e3;
-  --muted: #8b8a90;
-  --accent: #d9a441;
+  --bg: #0f0f11;
+  --panel: #161618;
+  --stage: #0b0b0d;
+  --control: #202024;
+  --control-hover: #2a2a30;
+  --border: #29292e;
+  --text: #e9e7e3;
+  --muted: #8c8b91;
+  --accent: #e0a84a;
+  --accent-hover: #ebb65c;
+  --on-accent: #1b1406;
   --error: #ffb4ab;
-  --error-bg: #3b1714ee;
+  --error-bg: #3a1714f0;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --radius: 6px;
+  --pad: 14px;
+  --gap: 10px;
+  --label-w: 92px;
+  --side-w: 208px;
+  --inspector-w: 312px;
+
   color-scheme: dark;
 }
 
@@ -21,39 +35,35 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font: var(--text-md) / 1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
-button,
 select,
 input[type='number'] {
   font: inherit;
+  font-size: var(--text-sm);
   color: var(--text);
-  background: var(--hover);
+  background: var(--control);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 9px;
+  border-radius: var(--radius);
+  height: 28px;
+  padding: 0 8px;
 }
 
-button {
-  cursor: pointer;
+select:hover,
+input[type='number']:hover {
+  border-color: var(--control-hover);
 }
 
-button:hover:not(:disabled) {
-  background: var(--active);
+input[type='checkbox'] {
+  accent-color: var(--accent);
 }
 
-button:disabled {
-  opacity: 0.5;
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-
-button.ghost {
-  background: none;
-  border-color: transparent;
-  color: var(--muted);
-  padding: 2px 6px;
-}
-
-button.ghost:hover {
-  color: var(--text);
+::-webkit-scrollbar-thumb {
+  background: var(--control-hover);
+  border-radius: 4px;
 }
