@@ -7,7 +7,16 @@
   import Select from '../ui/Select.svelte';
   import Slider from '../ui/Slider.svelte';
 
-  const params = $derived(Object.entries(studio.piece.params as ParamSchema));
+  // Params grouped into sections, in order of first appearance.
+  const groups = $derived.by(() => {
+    const out = new Map<string, [string, Param][]>();
+    for (const entry of Object.entries(studio.piece.params as ParamSchema)) {
+      const name = entry[1].group ?? 'Parameters';
+      if (!out.has(name)) out.set(name, []);
+      out.get(name)!.push(entry);
+    }
+    return [...out];
+  });
   const labelOf = (key: string, p: Param) =>
     p.label ?? key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
   const stepOf = (p: Param) => (p.kind === 'number' ? p.step : 1);
@@ -15,12 +24,13 @@
     step >= 1 ? String(Math.round(n)) : n.toFixed(Math.min(4, Math.ceil(-Math.log10(step))));
 </script>
 
-<Section title="Parameters">
-  {#snippet actions()}
-    <Button variant="ghost" title="Randomize parameters (D)" onclick={() => studio.diceParams()}>Dice</Button>
-    <Button variant="ghost" title="Reset to defaults" onclick={() => studio.resetParams()}>Reset</Button>
-  {/snippet}
+{#snippet paramActions()}
+  <Button variant="ghost" title="Randomize parameters (D)" onclick={() => studio.diceParams()}>Dice</Button>
+  <Button variant="ghost" title="Reset to defaults" onclick={() => studio.resetParams()}>Reset</Button>
+{/snippet}
 
+{#each groups as [title, params], gi (title)}
+<Section {title} actions={gi === 0 ? paramActions : undefined}>
   {#each params as [key, param] (key)}
     {@const v = studio.values[key]}
     {#if param.kind === 'number' || param.kind === 'int'}
@@ -57,6 +67,7 @@
     {/if}
   {/each}
 </Section>
+{/each}
 
 <style>
   .swatches {

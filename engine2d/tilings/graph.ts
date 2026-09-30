@@ -56,17 +56,21 @@ export interface WalkOptions {
   centers?: readonly Vec2[];
   /** 0 = as straight as possible, higher = more meandering. */
   wander?: number;
+  /** When stuck, back up along the path and branch (true), or let the strand end (false). */
+  backtrack?: boolean;
 }
 
 /**
  * Several walkers grow paths at once, one tile per step each, always onto an
- * unvisited neighbour of their tip (backtracking along their own path when
- * stuck). rank = the step a tile was reached, so tiles along a path act one
- * after another. With one start this is a depth-first snake.
+ * unvisited neighbour of their tip. rank = the step a tile was reached, so
+ * tiles along a path act one after another. With backtracking and one start
+ * this is a depth-first snake that covers everything; without, each strand
+ * simply ends when boxed in.
  */
 export function walkers(adj: number[][], starts: number[], rng: Rng, o: WalkOptions = {}): Walk {
   const include = o.include ?? (() => true);
   const wander = o.wander ?? 0.6;
+  const backtrack = o.backtrack ?? true;
   const rank = new Int32Array(adj.length).fill(-1);
   const parent = new Int32Array(adj.length).fill(-1);
   let count = 0;
@@ -90,7 +94,8 @@ export function walkers(adj: number[][], starts: number[], rng: Rng, o: WalkOpti
         const tip = st[st.length - 1];
         const options = adj[tip].filter((j) => rank[j] === -1 && include(j));
         if (!options.length) {
-          st.pop();
+          if (backtrack) st.pop();
+          else st.length = 0;
           continue;
         }
         let next = options[0];
@@ -110,6 +115,103 @@ export function walkers(adj: number[][], starts: number[], rng: Rng, o: WalkOpti
         break;
       }
     }
+  }
+  return { rank, parent, count };
+}
+
+export interface SpreadOptions {
+  include?: (i: number) => boolean;
+  /** Probability each neighbour catches the signal, 0..1. */
+  chance?: number;
+  /** Randomness of each hand-off time, 0..1 (1 = anywhere from 0 to 2 hops). */
+  jitter?: number;
+}
+
+/**
+ * A stochastic chain reaction: from the start tiles, each reached tile passes
+ * the signal to each neighbour with probability `chance`, taking 1 ± jitter
+ * time units. time = earliest arrival (in hops; −1 = never reached), parent =
+ * the neighbour it arrived from. Fronts branch, stall and leave gaps like
+ * real reactions, instead of the perfect rings of bfs().
+ */
+export function spread(adj: number[][], starts: number[], rng: Rng, o: SpreadOptions = {}): { time: Float32Array; parent: Int32Array } {
+  const include = o.include ?? (() => true);
+  const chance = o.chance ?? 1;
+  const jitter = o.jitter ?? 0.3;
+  const time = new Float32Array(adj.length).fill(Infinity);
+  const parent = new Int32Array(adj.length).fill(-1);
+  const done = new Uint8Array(adj.length);
+  const open = new Set<number>();
+  for (const s of starts) {
+    time[s] = 0;
+    open.add(s);
+  }
+  // Dijkstra over random edge delays (small graphs; a linear scan is plenty).
+  while (open.size) {
+    let i = -1;
+    for (const j of open) if (i < 0 || time[j] < time[i]) i = j;
+    open.delete(i);
+    done[i] = 1;
+    for (const j of adj[i]) {
+      if (done[j] || !include(j) || rng() >= chance) continue;
+      const t = time[i] + 1 + jitter * (rng() * 2 - 1);
+      if (t < time[j]) {
+        time[j] = t;
+        parent[j] = i;
+        open.add(j);
+      }
+    }
+  }
+  return { time: time.map((t) => (Number.isFinite(t) ? t : -1)), parent };
+}
+
+export interface GrowOptions {
+  include?: (i: number) => boolean;
+  /**
+   * How strongly tiles with more grown neighbours are preferred: 0 = any
+   * frontier tile (ragged, coral-like), 2–3 = solid blobs.
+   */
+  compactness?: number;
+  /** Extra per-tile preference (> 0), e.g. from a noise field for lobes. */
+  weight?: (i: number) => number;
+}
+
+/**
+ * Organic area growth (Eden model): colonies start at `seeds`; each step one
+ * tile on a colony's edge joins it. rank = the step it joined; parent = a
+ * grown neighbour, so it can tip outward from the colony.
+ */
+export function grow(adj: number[][], seeds: number[], rng: Rng, o: GrowOptions = {}): Walk {
+  const include = o.include ?? (() => true);
+  const k = o.compactness ?? 2;
+  const weight = o.weight ?? (() => 1);
+  const rank = new Int32Array(adj.length).fill(-1);
+  const parent = new Int32Array(adj.length).fill(-1);
+  const touching = new Map<number, number>(); // frontier tile → grown neighbours
+  let count = 0;
+
+  const join = (i: number, step: number) => {
+    rank[i] = step;
+    count++;
+    touching.delete(i);
+    for (const j of adj[i]) {
+      if (rank[j] !== -1 || !include(j)) continue;
+      touching.set(j, (touching.get(j) ?? 0) + 1);
+      if (parent[j] === -1) parent[j] = i;
+    }
+  };
+  for (const s of seeds) if (rank[s] === -1) join(s, 0);
+
+  for (let step = 1; touching.size; step++) {
+    let total = 0;
+    for (const [j, n] of touching) total += n ** k * weight(j);
+    let pick = rng() * total;
+    let chosen = -1;
+    for (const [j, n] of touching) {
+      chosen = j;
+      if ((pick -= n ** k * weight(j)) <= 0) break;
+    }
+    join(chosen, step);
   }
   return { rank, parent, count };
 }

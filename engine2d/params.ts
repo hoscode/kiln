@@ -4,6 +4,8 @@ import { paletteNames } from './palettes';
 
 interface Base {
   label?: string;
+  /** UI section; params without one go under "Parameters". */
+  group?: string;
 }
 export interface NumberParam extends Base { kind: 'number'; default: number; min: number; max: number; step: number }
 export interface IntParam extends Base { kind: 'int'; default: number; min: number; max: number }
@@ -33,6 +35,11 @@ export const color = (value: string, label?: string): ColorParam => ({ kind: 'co
 export const palette = (value: string, label?: string): PaletteParam => ({ kind: 'palette', default: value, label });
 export const choice = <const T extends string>(options: readonly T[], value: T, label?: string): ChoiceParam<T> =>
   ({ kind: 'choice', default: value, options, label });
+
+/** Put every param in `schema` under one UI section: { ...group('Camera', { … }) }. */
+export function group<S extends ParamSchema>(name: string, schema: S): S {
+  return Object.fromEntries(Object.entries(schema).map(([k, p]) => [k, { ...p, group: name }])) as S;
+}
 
 export function defaults<S extends ParamSchema>(schema: S): ParamValues<S> {
   return Object.fromEntries(Object.entries(schema).map(([k, p]) => [k, p.default])) as ParamValues<S>;
