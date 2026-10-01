@@ -16,6 +16,7 @@ layout(location = 3) in vec4 i_place;  // x, y, angle, seed
 layout(location = 4) in vec2 i_mats;   // front, back material
 layout(location = 5) in vec4 i_motion; // flip, axis angle, lift, scale
 layout(location = 6) in float i_glow;
+layout(location = 7) in vec4 i_frame;  // outward normal, height (floor tiles: 0, 0, 1, 0)
 
 uniform mat4 u_viewProj;
 uniform float u_gap;
@@ -30,6 +31,15 @@ vec3 rotAxis(vec3 p, vec3 k, float a) {
   return p * c + cross(k, p) * s + k * dot(k, p) * (1.0 - c);
 }
 
+// Turn the tile's frame (z up) to face along its outward normal.
+vec3 orient(vec3 v) {
+  vec3 nrm = normalize(i_frame.xyz);
+  vec3 ax = vec3(-nrm.y, nrm.x, 0.0); // z × n
+  float s = length(ax);
+  if (s < 1e-5) return nrm.z > 0.0 ? v : vec3(v.x, -v.y, -v.z);
+  return rotAxis(v, ax / s, atan(s, nrm.z));
+}
+
 vec3 place(vec3 p, out vec3 n) {
   n = a_normal;
   if (a_part > 2.5) return p; // ground
@@ -40,7 +50,10 @@ vec3 place(vec3 p, out vec3 n) {
   vec3 k = vec3(cos(i_motion.y), sin(i_motion.y), 0.0);
   p = rotAxis(p, k, i_motion.x);
   n = rotAxis(n, k, i_motion.x);
-  return p + vec3(i_place.xy, i_motion.z);
+  p.z += i_motion.z;
+  p = orient(p);
+  n = orient(n);
+  return p + vec3(i_place.xy, i_frame.w);
 }
 `;
 
@@ -108,8 +121,8 @@ uniform vec3 u_horizon;
 uniform vec3 u_envGround;
 uniform float u_fog;
 
-uniform vec4 u_matA[8];      // linear rgb, roughness
-uniform vec4 u_matB[8];      // metal, texture, scale, strength
+uniform vec4 u_matA[16];     // linear rgb, roughness
+uniform vec4 u_matB[16];     // metal, texture, scale, strength
 uniform float u_edgeMat;
 uniform float u_groundMat;
 
@@ -121,6 +134,7 @@ uniform sampler2D u_aoMap;
 uniform mat4 u_aoMatrix;
 uniform float u_aoRange;
 uniform float u_aoRadius;
+uniform float u_aoOn;
 uniform float u_sample;
 
 const vec2 POISSON[16] = vec2[](
@@ -151,6 +165,7 @@ float shadow(vec3 w, vec3 n, float ndl) {
 // Occlusion from above: how much nearby geometry sits over this point.
 // Gives soft contact shadows in the grout and under lifted tiles.
 float topOcclusion(vec3 w) {
+  if (u_aoOn < 0.5) return 1.0;
   vec4 s = u_aoMatrix * vec4(w, 1.0);
   vec3 c = s.xyz / s.w * 0.5 + 0.5;
   if (any(lessThan(c, vec3(0.0))) || any(greaterThan(c, vec3(1.0)))) return 1.0;

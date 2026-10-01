@@ -185,7 +185,7 @@ export class SceneSession implements Session {
       this.animate(ts);
       const jitter = n > 1 ? (r2(s).map((v) => v - 0.5) as [number, number]) : ([0, 0] as [number, number]);
       const cam = cameraState(scene.camera, phase, win, jitter, n > 1 ? disk(s, n) : [0, 0]);
-      const light = this.lightDir();
+      const light = this.lightDir(cam.eye, cam.target);
       const key = lightMatrix(cam.target, light, cam.reach);
       const top = lightMatrix(cam.target, [0, 0, 1], cam.reach);
 
@@ -253,9 +253,10 @@ export class SceneSession implements Session {
 
   // --- internals ---
 
-  private lightDir(): Vec3 {
-    const { azimuth, elevation } = this.built.scene.light;
-    const az = (azimuth * Math.PI) / 180, el = (elevation * Math.PI) / 180;
+  private lightDir(eye: Vec3, target: Vec3): Vec3 {
+    const { azimuth, elevation, follow } = this.built.scene.light;
+    const heading = follow ? Math.atan2(eye[1] - target[1], eye[0] - target[0]) : 0;
+    const az = (azimuth * Math.PI) / 180 + heading, el = (elevation * Math.PI) / 180;
     return normalize([Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)]);
   }
 
@@ -289,6 +290,13 @@ export class SceneSession implements Session {
       place.set([inst.x, inst.y, inst.angle, fract(Math.sin(i * 12.9898 + this.seed * 78.233) * 43758.5453)], j * 4);
       mats.set([inst.front, inst.back], j * 2);
     });
+    // Surface frame per tile: outward normal and height (flat floor by default).
+    const frame = new Float32Array(count * 4);
+    order.forEach((i, j) => {
+      const { normal = [0, 0, 1], z = 0 } = scene.instances[i];
+      frame.set([...normal, z], j * 4);
+    });
+    const frameBuf = buffer(frame, gl.STATIC_DRAW);
     const placeBuf = buffer(place, gl.STATIC_DRAW);
     const matsBuf = buffer(mats, gl.STATIC_DRAW);
     const motionData = new Float32Array(count * 4);
@@ -328,6 +336,7 @@ export class SceneSession implements Session {
         instanced(4, matsBuf, 2, first);
         instanced(5, motionBuf, 4, first);
         instanced(6, glowBuf, 1, first);
+        instanced(7, frameBuf, 4, first);
         batches.push({ vao, vertices: mesh.length / FLOATS_PER_VERTEX, count: n });
       }
       first += n;
@@ -431,9 +440,9 @@ export class SceneSession implements Session {
     gl.uniform3fv(p.u('u_envGround'), linear(env.ground));
     gl.uniform1f(p.u('u_fog'), (scene.camera.fog ?? 0) * 0.004);
 
-    const matA = new Float32Array(32);
-    const matB = new Float32Array(32);
-    scene.materials.slice(0, 8).forEach((m, i) => {
+    const matA = new Float32Array(16 * 4);
+    const matB = new Float32Array(16 * 4);
+    scene.materials.slice(0, 16).forEach((m, i) => {
       matA.set([...linear(m.color), m.roughness], i * 4);
       matB.set([m.metal, TEXTURES[m.texture ?? 'plain'], m.textureScale ?? 1, m.textureStrength ?? 1], i * 4);
     });
@@ -454,6 +463,7 @@ export class SceneSession implements Session {
     gl.uniformMatrix4fv(p.u('u_aoMatrix'), false, top.matrix);
     gl.uniform1f(p.u('u_aoRange'), top.range);
     gl.uniform1f(p.u('u_aoRadius'), 0.45 / (2 * cam.reach)); // ~0.45 world units
+    gl.uniform1f(p.u('u_aoOn'), scene.occlusion === false ? 0 : 1);
     gl.uniform1f(p.u('u_sample'), sample);
 
     if (ground) {
@@ -463,6 +473,7 @@ export class SceneSession implements Session {
       gl.vertexAttrib2f(4, 0, 0);
       gl.vertexAttrib4f(5, 0, 0, 0, 1);
       gl.vertexAttrib1f(6, 0);
+      gl.vertexAttrib4f(7, 0, 0, 1, 0);
       gl.drawArrays(gl.TRIANGLES, 0, ground.vertices);
     }
     this.drawTiles();

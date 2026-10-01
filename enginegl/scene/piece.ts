@@ -26,6 +26,13 @@ export interface Instance {
   /** Material indices for the top and bottom faces. */
   front: number;
   back: number;
+  /**
+   * Optional: the tile sits on a surface instead of the floor, facing along
+   * this outward unit normal, `z` above the floor plane (e.g. on a globe). Its
+   * angle, flip axis and lift are then in that tilted frame — see `orient()`.
+   */
+  normal?: [number, number, number];
+  z?: number;
 }
 
 export interface SceneCamera {
@@ -40,7 +47,8 @@ export interface SceneCamera {
   fov?: number;
   /** Half the visible height at the target, in world units. */
   zoom: number;
-  target?: Vec2;
+  /** Point the camera looks at: [x, y] on the floor, or [x, y, z]. */
+  target?: Vec2 | [number, number, number];
   /** Side-to-side sway, radians, once per loop. */
   sway?: number;
   /** Whole orbits per loop. */
@@ -60,6 +68,8 @@ export interface SceneLight {
   intensity?: number;
   /** Shadow penumbra, 0..1. */
   softness?: number;
+  /** Azimuth is relative to the camera's heading, so the light turns with it. */
+  follow?: boolean;
 }
 
 export interface Scene<D = unknown> {
@@ -70,12 +80,14 @@ export interface Scene<D = unknown> {
   /** Footprint scale per tile (1 − grout). */
   gap: number;
   instances: Instance[];
-  /** Up to 8. */
+  /** Up to 16. */
   materials: Material[];
   /** Material for bevels and sides. */
   edge: number;
   /** Material for the floor, or null for none. */
   ground: number | null;
+  /** Contact shadows from above (default on). Turn off for tiles on a globe. */
+  occlusion?: boolean;
   camera: SceneCamera;
   light: SceneLight;
   environment: { sky: string; horizon: string; ground: string };

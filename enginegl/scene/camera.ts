@@ -94,7 +94,7 @@ export function cameraState(cam: SceneCamera, phase: number, win: FrameWindow, j
   const aspect = win.width / win.height;
   const yaw = rad(spec.yaw) + Math.PI * 2 * (cam.orbit ?? 0) * phase + (cam.sway ?? 0) * Math.sin(Math.PI * 2 * phase);
   const pitch = rad(spec.pitch);
-  const target: Vec3 = [cam.target?.[0] ?? 0, cam.target?.[1] ?? 0, 0];
+  const target: Vec3 = [cam.target?.[0] ?? 0, cam.target?.[1] ?? 0, cam.target?.[2] ?? 0];
   const dir: Vec3 = [Math.cos(pitch) * Math.cos(yaw), Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch)];
   // Screen-up is the far side of the floor; well defined even looking straight down.
   const up: Vec3 = [-Math.cos(yaw), -Math.sin(yaw), 0];
@@ -152,15 +152,15 @@ export function lightMatrix(target: Vec3, dir: Vec3, r: number): { matrix: Mat4;
 }
 
 /**
- * Whether a floor point is ever in frame over the loop (sway / orbit
- * included). `margin` > 1 widens the frame, e.g. to catch tiles half in view.
+ * Whether a point (on the floor unless z is given) is ever in frame over the
+ * loop (sway / orbit included). `margin` > 1 widens the frame, e.g. to catch tiles half in view.
  */
-export function inFrame(cam: SceneCamera, aspect: number, margin = 1.15): (x: number, y: number) => boolean {
+export function inFrame(cam: SceneCamera, aspect: number, margin = 1.15): (x: number, y: number, z?: number) => boolean {
   const win: FrameWindow = { width: aspect * 1000, height: 1000, offsetY: 0, tileHeight: 1000 };
   const views = Array.from({ length: 16 }, (_, k) => cameraState({ ...cam, dof: 0 }, k / 16, win, [0, 0], [0, 0]).viewProj);
-  return (x, y) =>
+  return (x, y, z = 0) =>
     views.some((m) => {
-      const w = m[3] * x + m[7] * y + m[15];
-      return w > 0 && Math.abs((m[0] * x + m[4] * y + m[12]) / w) < margin && Math.abs((m[1] * x + m[5] * y + m[13]) / w) < margin;
+      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+      return w > 0 && Math.abs((m[0] * x + m[4] * y + m[8] * z + m[12]) / w) < margin && Math.abs((m[1] * x + m[5] * y + m[9] * z + m[13]) / w) < margin;
     });
 }
