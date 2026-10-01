@@ -17,6 +17,8 @@ export const palettes: Record<string, Palette> = {
   marble: { bg: '#e8e3da', ink: '#26262a', colors: ['#f3f0ea', '#2b2b2f', '#b9ab90', '#5d6b78'] },
   graphite: { bg: '#141416', ink: '#ececec', colors: ['#2a2a2e', '#4a4a50', '#a3a3ab', '#e6e2da', '#b3864f'] },
   ocean: { bg: '#f1f4f2', ink: '#0b1d2a', colors: ['#0b3954', '#087e8b', '#bfd7ea', '#ff5a5f', '#c81d25'] },
+  atlas: { bg: '#d9e3e6', ink: '#2b2a28', colors: ['#e3b27c', '#9fc086', '#c4a3d0', '#ebcd6e', '#8fb8cc', '#e0907f'] },
+  dusk: { bg: '#10141c', ink: '#efe8dc', colors: ['#2f4858', '#33658a', '#86647b', '#b5838d', '#6d8f71', '#c99a5b'] },
 };
 
 export const paletteNames = Object.keys(palettes);

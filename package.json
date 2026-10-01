@@ -12,6 +12,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@types/node": "^26.6.3",
+    "@types/topojson-client": "^3.1.5",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "tsx": "^4.23.15",
@@ -19,6 +20,8 @@
     "vite": "^6.4.3"
   },
   "dependencies": {
-    "mediabunny": "^1.61.0"
+    "mediabunny": "^1.61.0",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
   }
 }

@@ -9,6 +9,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
   "include": ["apps/ui/src/**/*", "apps/ui/server/**/*", "engine2d/**/*", "enginegl/**/*", "runtime/**/*", "pieces/**/*", "scripts/**/*", "vite.config.ts"]
