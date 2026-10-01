@@ -30,6 +30,48 @@ Later, once there's a body of work:
   editions; kiln is already deterministic (params + seed → same output),
   which is exactly what those platforms need.
 
+## Stock footage: upload once, reach many
+
+Check each service's current fees and terms before signing up.
+
+- **Distributor — Blackbox (blackbox.global).** One account: upload and
+  keyword once, it submits to Shutterstock, Adobe Stock, Pond5, Getty/iStock
+  and others, and takes a share of each sale on top of the agencies' cut.
+  Start here to test demand with no per-agency setup.
+- **Multi-upload tools — Xpiks (free) or StockSubmitter (paid).** You hold
+  your own account on each agency (approval needed per site); the tool sends
+  files + titles + keywords to all of them at once (mostly FTP). You keep the
+  full contributor share. Switch to this for the agencies that sell best.
+
+Preparing clips:
+
+- Cut each master into several **5–60 s clips** (10–30 s is the sweet spot):
+  opening spark, mid-growth, full coverage, flip-back. Say "seamless loop"
+  in the title when it is one.
+- 4K (3840×2160); high-bitrate H.264/HEVC, or ProRes:
+  `ffmpeg -ss 20 -i master.mp4 -t 20 -c:v prores_ks -profile:v 3 -an clip.mov`
+- No audio, no watermark, no third-party overlays.
+- Label as **computer-generated / 3D animation** — procedural code, not
+  generative AI. Abstract CG needs no model or property releases.
+- 25–50 keywords per clip: abstract, geometric, penrose tiling, tiles,
+  flipping, motion background, seamless loop, minimal, pattern, mosaic, 3D,
+  4K, backdrop.
+
+## Science videos
+
+For the science series (see PLAN.md → *Piece backlog*):
+
+- **YouTube** — 3–8 min explainers (kiln visuals + narration / labels,
+  Manim for equations); Shorts for one striking phenomenon with one caption.
+- **Stock** — "science background", "simulation", "fractal", "particles"
+  sell steadily to educational publishers and documentary editors.
+- **Wikimedia Commons** — freely licensed animations used on Wikipedia;
+  credibility and reach.
+- **Labs, universities, journal covers** — accurate, beautiful visuals get
+  commissioned; keep a portfolio page for them.
+- Always cite the model and parameters in the caption
+  (e.g. "Gray–Scott, F = 0.037, k = 0.06").
+
 ## Masters: what to render
 
 Render one **master** per piece, then cut every platform version from it with

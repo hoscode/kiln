@@ -166,6 +166,30 @@ watercolor · space colonization · Voronoi / Delaunay stipple
 gyroid & TPMS · Clifford torus · knots & tubes · strange attractors (volumetric) ·
 Mandelbulb / fractals · minimal surfaces · parametric shells · caustics studies
 
+Science series (real equations, cited in code and captions; one parameter
+sweep per video is often the whole story). Ordered by how much kiln has:
+
+- [ ] **Percolation** — spread with chance p on the Penrose graph; sweep p
+      through ~0.59 and watch it suddenly span the floor. Reuses `spread` /
+      the reaction work. *First piece.*
+- [ ] **Quasicrystals** — Penrose matching-rule arrows, inflation/deflation,
+      5-fold diffraction pattern; the Shechtman Nobel story. Builds on
+      `penroseP3`.
+- [ ] **Reaction–diffusion** (Gray–Scott) — Turing spots and stripes; GPU
+      shader simulation like `gyroid`.
+- [ ] **DLA** — random walkers sticking into coral / lightning shapes; 2D
+      simulation mode.
+- [ ] **Ising model** — magnetic domains; sweep temperature through T_c.
+- [ ] **Chaos** — double pendulum, Lorenz attractor, many near-identical
+      starts diverging.
+- [ ] **Waves** — interference, double slit, Chladni / drum standing waves;
+      shader.
+- [ ] **Minimal surfaces** — gyroid, Schwarz P/D, soap films; extends the
+      gyroid shader.
+
+For explainers, kiln renders the visuals and narration / labels carry the
+explanation; Manim pairs well for equation-heavy segments.
+
 ## Open questions
 
 - Where heavy renders run long-term: local M1 Pro vs rented NVIDIA box?
