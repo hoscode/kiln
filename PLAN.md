@@ -166,26 +166,65 @@ watercolor · space colonization · Voronoi / Delaunay stipple
 gyroid & TPMS · Clifford torus · knots & tubes · strange attractors (volumetric) ·
 Mandelbulb / fractals · minimal surfaces · parametric shells · caustics studies
 
-Science series (real equations, cited in code and captions; one parameter
-sweep per video is often the whole story). Ordered by how much kiln has:
+Science series — real equations, cited in code and captions; one parameter
+sweep per video is often the whole story. Engine in brackets: [2D] canvas
+simulation, [shader] GPU fragment simulation, [scene] 3D instanced scene.
+**First piece: percolation** (most of it exists from the reaction work).
 
-- [ ] **Percolation** — spread with chance p on the Penrose graph; sweep p
-      through ~0.59 and watch it suddenly span the floor. Reuses `spread` /
-      the reaction work. *First piece.*
-- [ ] **Quasicrystals** — Penrose matching-rule arrows, inflation/deflation,
-      5-fold diffraction pattern; the Shechtman Nobel story. Builds on
-      `penroseP3`.
-- [ ] **Reaction–diffusion** (Gray–Scott) — Turing spots and stripes; GPU
-      shader simulation like `gyroid`.
-- [ ] **DLA** — random walkers sticking into coral / lightning shapes; 2D
-      simulation mode.
-- [ ] **Ising model** — magnetic domains; sweep temperature through T_c.
-- [ ] **Chaos** — double pendulum, Lorenz attractor, many near-identical
-      starts diverging.
-- [ ] **Waves** — interference, double slit, Chladni / drum standing waves;
-      shader.
+Mathematics:
+- [ ] **Quasicrystal tilings** — Penrose matching-rule arrows, inflation /
+      deflation, 5-fold symmetry; builds on `penroseP3`. [scene]
 - [ ] **Minimal surfaces** — gyroid, Schwarz P/D, soap films; extends the
-      gyroid shader.
+      gyroid shader. [shader]
+- [ ] **Fourier epicycles** — any closed drawing traced by rotating circles. [2D]
+- [ ] **Fractals** — Mandelbrot zooms, Julia sets morphing with c. [shader]
+
+Physics:
+- [ ] **Percolation** — spread with chance p on the Penrose graph; sweep p
+      through ~0.59 and watch it suddenly span the floor. Reuses `spread`. [scene]
+- [ ] **Ising model** — magnetic domains; sweep temperature through T_c. [2D]
+- [ ] **Chaos** — double pendulum, Lorenz attractor, many near-identical
+      starts diverging. [2D]
+- [ ] **Waves** — interference, double slit, Chladni / drum standing modes. [shader]
+- [ ] **Fluids** — stable fluids / smoke, Kármán vortex street behind a
+      cylinder. [shader]
+- [ ] **N-body & orbits** — galaxy collisions, three-body choreographies,
+      Lagrange points. [2D]
+- [ ] **Quasicrystal diffraction** — the 10-fold Bragg pattern that won
+      Shechtman the 2011 Nobel; pairs with the tiling piece. [shader]
+
+Chemistry:
+- [ ] **Reaction–diffusion** (Gray–Scott) — Turing spots, stripes, mazes;
+      sweep F and k through the pattern map. [shader]
+- [ ] **Belousov–Zhabotinsky** — the oscillating reaction's spiral waves
+      (excitable medium / Oregonator). [shader]
+- [ ] **Crystal growth** — snowflake dendrites (Reiter / phase-field). [shader]
+- [ ] **Brownian motion & diffusion** — one pollen grain vs. many molecules;
+      Einstein's 1905 link. [2D]
+- [ ] **Molecular orbitals** — hydrogen orbitals as glowing volumes;
+      s/p/d/f shapes. [shader]
+
+Biology:
+- [ ] **DLA & branching growth** — coral, lightning, bacterial colonies. [2D]
+- [ ] **Phyllotaxis** — sunflower / pinecone spirals from the golden angle. [2D]
+- [ ] **Boids / flocking** — starlings and fish schools from three rules. [2D]
+- [ ] **Space colonization** — leaf veins, roots, trees growing toward light. [2D]
+- [ ] **Morphogenesis** — Turing patterns on animal coats (zebra, leopard);
+      shares the reaction–diffusion core. [shader]
+- [ ] **SIR epidemics on a network** — infection spreading tile to tile; a
+      cousin of the reaction pattern. [scene]
+- [ ] **Neural activity** — spiking network firing in cascades / avalanches. [2D]
+
+Computer science:
+- [ ] **Sorting algorithms** — visualised and sonified (quick, merge, radix). [2D]
+- [ ] **Maze generation & pathfinding** — DFS / Wilson's mazes, then BFS,
+      Dijkstra, A* racing through them. [2D]
+- [ ] **Cellular automata** — Game of Life, Rule 30 / 110, Langton's ant. [2D]
+- [ ] **Wave function collapse** — tiles resolving into a coherent map. [2D]
+- [ ] **Graph algorithms** — spanning trees, flood fill, shortest paths on
+      the Penrose graph; reuses `adjacency` / `bfs`. [scene]
+- [ ] **Neural network training** — a small net's decision boundary bending
+      into shape, epoch by epoch. [2D]
 
 For explainers, kiln renders the visuals and narration / labels carry the
 explanation; Manim pairs well for equation-heavy segments.
