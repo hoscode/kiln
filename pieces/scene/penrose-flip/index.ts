@@ -6,6 +6,7 @@ import {
   bool,
   choice,
   color,
+  ease,
   getPalette,
   group,
   grow,
@@ -23,7 +24,7 @@ import {
   walkers,
   type Vec2,
 } from '../../../engine2d';
-import { defineScene, type Material, type SurfaceTexture } from '../../../enginegl';
+import { defineScene, inFrame, type Material, type SceneCamera, type SurfaceTexture } from '../../../enginegl';
 
 // A Penrose P3 floor where tiles hop, turn over to reveal their other face,
 // and settle. Every tile that moves turns twice per loop (over, then back),
@@ -32,9 +33,11 @@ import { defineScene, type Material, type SurfaceTexture } from '../../../engine
 // Orders:
 //  - grow: colonies start at random tiles and spread area-wise like an
 //    organism, one edge tile joining at a time, with lobed, organic outlines.
-//  - reaction: a flipping tile sets off its neighbours (each with some chance,
-//    after a slightly random hand-off), branching outward like a real chain
-//    reaction. Runs at its natural pace; tiles it never reaches stay still.
+//  - reaction: a chain reaction creeping along branching tendrils, in beats —
+//    a tile turns, lands, rests for `pause`, then sets off a neighbour. It
+//    ramps up one tendril per beat to `tendrils` and then holds there, so it
+//    grows linearly (surplus tips go dormant, boxed-in ones rekindle). Tiles it
+//    can't reach within the pass stay still.
 //  - chain: single-file strands, each tile setting off the next.
 //  - cascade: perfect domino rings, stretched to fill the loop.
 //  - radial / sweep / …: position-based waves.
@@ -83,7 +86,9 @@ export default defineScene({
       compactness: num(2.5, 0, 5, 0.1),
       lobes: num(1, 0, 3, 0.05),
       handoff: num(0.55, 0.15, 1.5, 0.01, 'Hand-off'),
-      chance: num(0.75, 0.3, 1, 0.01, 'Spread chance'),
+      tendrils: int(8, 1, 40),
+      pause: num(0.25, 0, 3, 0.05, 'Pause (s)'),
+      branching: num(0.35, 0, 1, 0.01, 'Branching'),
       flipTime: num(3, 0.2, 8, 0.1, 'Flip time (s)'),
       hold: num(4, 0, 30, 0.5, 'Hold (s)'),
       sharpness: num(2, 1, 8, 0.1),
@@ -121,9 +126,21 @@ export default defineScene({
     const { rhombi, prototypes } = penroseP3(p.generations);
     const centers = rhombi.map((r) => r.center);
 
-    // Choreograph the tiles around the visible area; tiles beyond it stay put.
+    const camera: SceneCamera = {
+      tilt: p.tilt,
+      turn: p.turn,
+      projection: p.projection,
+      fov: p.fov,
+      zoom: p.zoom,
+      sway: p.drift ? p.sway : 0,
+      dof: p.dof,
+      fog: p.fog,
+    };
+    // Choreograph only the tiles that are ever in frame; the rest stay put.
     const radius = p.zoom * 2.4;
-    const inView = (i: number) => Math.hypot(centers[i][0], centers[i][1]) < radius;
+    const seen = inFrame(camera, 16 / 9);
+    const visible = centers.map(([x, y]) => seen(x, y));
+    const inView = (i: number) => visible[i];
     const startAt: Vec2 =
       p.origin === 'edge'
         ? [-radius * 0.9, 0]
@@ -158,24 +175,30 @@ export default defineScene({
       const inside = [...centers.keys()].filter(inView);
       const seeds = spreadOut(centers, inside, nearest(centers, startAt[0], startAt[1]), p.sources);
       const walkRng = rng.fork('walk');
-      // hops[i]: how many hand-offs it takes the signal to reach tile i (−1 = never).
-      let hops: ArrayLike<number>;
       if (p.pattern === 'reaction') {
-        const r = spread(adj, seeds, walkRng, { include: inView, chance: p.chance, jitter: p.jitter });
-        hops = r.time;
-        parents.set(r.parent);
+        // Tile by tile, in beats: every tile lit in a generation turns together,
+        // lands, rests for `pause`, and only then does the next generation go.
+        // Generations never overlap and hold at most `tendrils` tiles, so the
+        // reaction grows linearly. Whatever it can't reach within the pass stays still.
+        const pause = p.pause / p.duration;
+        const step = len + pause;
+        const walk = spread(adj, seeds, walkRng, { include: inView, tendrils: p.tendrils, branching: p.branching, centers });
+        // A little slack inside the rest, never enough to overlap the next beat.
+        const r = { walk, start: Array.from(walk.rank, (g) => (g < 0 ? -1 : g * step + (g > 0 ? p.jitter * 0.5 * pause * rng() : 0))) };
+        r.start.forEach((s, i) => (firstStart[i] = s <= window ? s : -1));
+        r.walk.parent.forEach((from, i) => (parents[i] = firstStart[i] >= 0 ? from : -1));
       } else {
         const walk = walkers(adj, seeds, walkRng, { include: inView, centers, backtrack: false });
-        hops = walk.rank;
+        const hops = walk.rank;
         parents.set(walk.parent);
+        // The next tile starts when the previous is `handoff` of the way through its
+        // flip — unless that is too slow to reach every tile within the half-loop,
+        // in which case hand-offs tighten so the reaction still covers the floor.
+        let last = 1;
+        for (let i = 0; i < hops.length; i++) last = Math.max(last, hops[i]);
+        const hop = Math.min(p.handoff * len, window / last);
+        for (let i = 0; i < hops.length; i++) if (hops[i] >= 0) firstStart[i] = hops[i] * hop;
       }
-      // The next tile starts when the previous is `handoff` of the way through its
-      // flip — unless that is too slow to reach every tile within the half-loop,
-      // in which case hand-offs tighten so the reaction still covers the floor.
-      let last = 1;
-      for (let i = 0; i < hops.length; i++) last = Math.max(last, hops[i]);
-      const hop = Math.min(p.handoff * len, window / last);
-      for (let i = 0; i < hops.length; i++) if (hops[i] >= 0) firstStart[i] = hops[i] * hop;
       replay = true;
     } else if (p.pattern === 'cascade') {
       const adj = adjacency(rhombi.map((r) => r.verts));
@@ -200,7 +223,12 @@ export default defineScene({
       const [x, y] = r.center;
       const [dx, dy] = directions[i];
       // Tip forward across the direction of travel, or along the tile's own diagonal.
-      const axis = p.axis === 'travel' ? Math.atan2(dy, dx) + Math.PI / 2 : r.angle;
+      // Either way the axis is one of the tile's diagonals (angle, angle + 90°):
+      // a rhombus turned over any other line lands mirrored, out of its slot.
+      const travel = Math.atan2(dy, dx) + Math.PI / 2;
+      // Of the four diagonal directions, the one nearest the travel axis keeps the tip direction.
+      const k = Math.round((travel - r.angle) / (Math.PI / 2));
+      const axis = p.axis === 'travel' ? r.angle + (k * Math.PI) / 2 : r.angle;
       const perp: Vec2 = [-Math.sin(axis), Math.cos(axis)];
       const reach = Math.max(...r.verts.map(([vx, vy]) => Math.abs((vx - x) * perp[0] + (vy - y) * perp[1])));
       const s = firstStart[i];
@@ -240,16 +268,7 @@ export default defineScene({
       ],
       edge: 4,
       ground: 5,
-      camera: {
-        tilt: p.tilt,
-        turn: p.turn,
-        projection: p.projection,
-        fov: p.fov,
-        zoom: p.zoom,
-        sway: p.drift ? p.sway : 0,
-        dof: p.dof,
-        fog: p.fog,
-      },
+      camera,
       light: { azimuth: p.sunAngle, elevation: p.sunHeight, color: '#fff2df', intensity: 3.2, softness: p.softness },
       environment: { sky: adjust(pal.bg, 0.2, 0.8), horizon: pal.bg, ground: adjust(pal.bg, -0.05) },
       glow: { color: p.signalColor, intensity: 3 },
@@ -269,25 +288,44 @@ export default defineScene({
         out.scale[i] = p.motion === 'ripple' ? 1 : 0;
         continue;
       }
-      const a = act(phase, starts[0], len, k);
-      const b = act(phase, starts[1], len, k);
       let angle: number;
+      let lift: number;
       let scale = 1;
       if (p.motion === 'ripple') {
-        angle = Math.PI * (a + b);
+        const a = turnOver(phase, starts[0], len, k);
+        const b = turnOver(phase, starts[1], len, k);
+        angle = Math.PI * (a.turn + b.turn);
+        // Rise on a smooth arc, never lower than the corners need to clear the floor.
+        lift = Math.max((a.hop + b.hop) * (1 + p.lift), Math.abs(Math.sin(angle)) * 1.02) * reach;
       } else {
         // Swing down into place, hold, swing away: empty ↔ empty loops.
+        const a = act(phase, starts[0], len, k);
+        const b = act(phase, starts[1], len, k);
         angle = (1 - a) * (-Math.PI / 2) + b * (Math.PI / 2);
         scale = Math.min(1, a * 4, (1 - b) * 4);
+        lift = Math.abs(Math.sin(angle)) * reach * (1 + p.lift) * scale;
       }
       out.flip[i] = angle;
       out.axis[i] = axis;
-      out.lift[i] = Math.abs(Math.sin(angle)) * reach * (1 + p.lift) * scale;
+      out.lift[i] = lift;
       out.scale[i] = scale;
       out.glow[i] = p.glow ? p.signal * Math.max(...starts.map((s) => signal(phase - s, len, trail))) * scale : 0;
     }
   },
 });
+
+/**
+ * One turn-over: the tile lifts off, turns while it is in the air and settles
+ * back down. `hop` is a smooth arch over the whole move; the turn happens in
+ * its middle, so the tile is already clear of the floor when it starts to tip
+ * and has stopped turning before it lands.
+ */
+function turnOver(phase: number, start: number, len: number, k: number) {
+  const x = (phase - start) / len;
+  if (x <= 0 || x >= 1) return { turn: x >= 1 ? 1 : 0, hop: 0 };
+  const u = Math.min(1, Math.max(0, (x - 0.15) / 0.7));
+  return { turn: ease(u, k), hop: Math.sin(Math.PI * x) ** 1.5 };
+}
 
 /** Blend a 0..1 delay with per-tile randomness. */
 function mixJitter(d: number, j: number, rng: () => number) {

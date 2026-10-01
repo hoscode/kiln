@@ -150,3 +150,17 @@ export function lightMatrix(target: Vec3, dir: Vec3, r: number): { matrix: Mat4;
   const near = d - r - 3, far = d + r + 3;
   return { matrix: mul(ortho(-r, r, -r, r, near, far), lookAt(eye, target, up)), range: far - near };
 }
+
+/**
+ * Whether a floor point is ever in frame over the loop (sway / orbit
+ * included). `margin` > 1 widens the frame, e.g. to catch tiles half in view.
+ */
+export function inFrame(cam: SceneCamera, aspect: number, margin = 1.15): (x: number, y: number) => boolean {
+  const win: FrameWindow = { width: aspect * 1000, height: 1000, offsetY: 0, tileHeight: 1000 };
+  const views = Array.from({ length: 16 }, (_, k) => cameraState({ ...cam, dof: 0 }, k / 16, win, [0, 0], [0, 0]).viewProj);
+  return (x, y) =>
+    views.some((m) => {
+      const w = m[3] * x + m[7] * y + m[15];
+      return w > 0 && Math.abs((m[0] * x + m[4] * y + m[12]) / w) < margin && Math.abs((m[1] * x + m[5] * y + m[13]) / w) < margin;
+    });
+}

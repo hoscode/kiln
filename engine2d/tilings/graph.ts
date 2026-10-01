@@ -121,48 +121,91 @@ export function walkers(adj: number[][], starts: number[], rng: Rng, o: WalkOpti
 
 export interface SpreadOptions {
   include?: (i: number) => boolean;
-  /** Probability each neighbour catches the signal, 0..1. */
-  chance?: number;
-  /** Randomness of each hand-off time, 0..1 (1 = anywhere from 0 to 2 hops). */
-  jitter?: number;
+  /** How many tendrils grow at once. */
+  tendrils?: number;
+  /** Chance a tip splits in two (only while there is room for more tendrils). */
+  branching?: number;
+  /** Tendrils added per generation until there are `tendrils` (a linear ramp). */
+  ramp?: number;
+  /** Tile centres: when given, tips prefer to keep heading the same way. */
+  centers?: readonly Vec2[];
 }
 
 /**
- * A stochastic chain reaction: from the start tiles, each reached tile passes
- * the signal to each neighbour with probability `chance`, taking 1 ± jitter
- * time units. time = earliest arrival (in hops; −1 = never reached), parent =
- * the neighbour it arrived from. Fronts branch, stall and leave gaps like
- * real reactions, instead of the perfect rings of bfs().
+ * A chain reaction creeping along tendrils: each generation, every live tip
+ * sets off one unlit neighbour (sometimes two, a branch), favouring open floor
+ * so tendrils stay thin. Tips beyond `tendrils` go dormant; when tips get
+ * boxed in, the newest lit tiles bordering open floor sprout new ones — so
+ * it keeps a steady number of tendrils and covers every reachable tile.
+ * rank = generation lit; parent = who set it off.
  */
-export function spread(adj: number[][], starts: number[], rng: Rng, o: SpreadOptions = {}): { time: Float32Array; parent: Int32Array } {
+export function spread(adj: number[][], starts: number[], rng: Rng, o: SpreadOptions = {}): Walk {
   const include = o.include ?? (() => true);
-  const chance = o.chance ?? 1;
-  const jitter = o.jitter ?? 0.3;
-  const time = new Float32Array(adj.length).fill(Infinity);
+  const tendrils = Math.max(1, Math.round(o.tendrils ?? 8));
+  const branching = o.branching ?? 0.3;
+  const rank = new Int32Array(adj.length).fill(-1);
   const parent = new Int32Array(adj.length).fill(-1);
-  const done = new Uint8Array(adj.length);
-  const open = new Set<number>();
-  for (const s of starts) {
-    time[s] = 0;
-    open.add(s);
-  }
-  // Dijkstra over random edge delays (small graphs; a linear scan is plenty).
-  while (open.size) {
-    let i = -1;
-    for (const j of open) if (i < 0 || time[j] < time[i]) i = j;
-    open.delete(i);
-    done[i] = 1;
-    for (const j of adj[i]) {
-      if (done[j] || !include(j) || rng() >= chance) continue;
-      const t = time[i] + 1 + jitter * (rng() * 2 - 1);
-      if (t < time[j]) {
-        time[j] = t;
-        parent[j] = i;
-        open.add(j);
+  const lit: number[] = [];
+  let count = 0;
+
+  const light = (j: number, from: number, gen: number) => {
+    rank[j] = gen;
+    parent[j] = from;
+    lit.push(j);
+    count++;
+  };
+  const open = (i: number) => adj[i].filter((j) => rank[j] === -1 && include(j));
+  // Where a tip goes next: into open floor, and (with centres) straight on.
+  const next = (i: number, options: number[]) => {
+    const from = parent[i];
+    const weights = options.map((j) => {
+      let w = (1 + open(j).length) ** 2;
+      if (o.centers && from >= 0) {
+        const c = o.centers;
+        const ax = c[i][0] - c[from][0], ay = c[i][1] - c[from][1];
+        const bx = c[j][0] - c[i][0], by = c[j][1] - c[i][1];
+        w *= Math.exp(1.5 * (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) || 1));
       }
+      return w;
+    });
+    let pick = rng() * weights.reduce((a, b) => a + b, 0);
+    return options[weights.findIndex((w) => (pick -= w) <= 0)] ?? options[options.length - 1];
+  };
+
+  let tips: number[] = [];
+  for (const s of starts) if (rank[s] === -1) (light(s, -1, 0), tips.push(s));
+  // Tendrils come in at a steady `ramp` per generation, so the reaction
+  // catches and spreads out instead of bursting from its seeds all at once.
+  let target = tips.length;
+  const ramp = Math.max(1, Math.round(o.ramp ?? 1));
+
+  for (let gen = 1; ; gen++) {
+    target = Math.min(tendrils, target + ramp);
+    const born: number[] = [];
+    const step = (i: number) => {
+      const options = open(i).filter((j) => !born.includes(j));
+      if (!options.length) return;
+      const j = next(i, options);
+      light(j, i, gen);
+      born.push(j);
+    };
+    // Every tip moves on first; then some branch, while there's room under the cap.
+    const order = rng.shuffle([...tips]);
+    for (const i of order) step(i);
+    for (const i of order) if (born.length < target && rng() < branching) step(i);
+    // Keep a steady number of tendrils: surplus tips go dormant, and boxed-in
+    // ones are replaced by sprouts from the newest lit tiles beside open floor.
+    tips = rng.shuffle(born).slice(0, target);
+    for (let k = lit.length - 1; k >= 0 && tips.length < target; k--) {
+      const i = lit[k];
+      if (rank[i] === gen || !open(i).length) continue;
+      const j = next(i, open(i));
+      light(j, i, gen);
+      tips.push(j);
     }
+    if (!tips.length) break;
   }
-  return { time: time.map((t) => (Number.isFinite(t) ? t : -1)), parent };
+  return { rank, parent, count };
 }
 
 export interface GrowOptions {
