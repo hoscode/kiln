@@ -6,12 +6,11 @@ import { countryAt, REGIONS } from './world';
 // Hexagons laid out as a map — a flat floor, or a globe (a geodesic sphere of
 // hexagons and 12 pentagons) — with real countries (Natural Earth borders
 // sampled onto the cells) or invented ones. Every country has a colour on
-// each face (two map colourings, neighbours always told apart), and the map
-// beats like a heart: each beat sends a pulse out from the heart, and as it
-// reaches a country the whole country flips over — a quick, strong lub — then
-// trembles with a softer dub; the sea turns tile by tile like a swell. The next
-// beat flips everything back. An even number of beats per loop brings every
-// tile home, so the loop is seamless.
+// each face (two map colourings, neighbours always told apart), and a heartbeat
+// wanders across the map, country after country — usually on to a neighbour,
+// sometimes jumping somewhere new. Each country flips over as one with a
+// quick, strong lub, then trembles with a softer dub. Half a loop later the
+// same sequence flips them back, so the loop is seamless.
 
 const EDGES: Record<string, Omit<Material, 'color'> & { color?: string }> = {
   brass: { color: '#c9a15a', roughness: 0.3, metal: 1, texture: 'brushed', textureStrength: 0.6 },
@@ -57,17 +56,17 @@ export default defineScene({
       variety: num(0.45, 0, 1, 0.01, 'Size variety (invented)'),
       day: palette('atlas', 'Front palette'),
       night: palette('dusk', 'Back palette'),
-      sea: color('#a7c6d6', 'Sea'),
-      seaFlips: bool(false, 'Sea flips'),
-      seaBack: color('#1b2a3a', 'Sea (back)'),
+      sea: color('#0b2c55', 'Sea'),
+      seaBack: color('#06152b', 'Sea (back)'),
     }),
     ...group('Heartbeat', {
-      duration: num(16, 4, 60, 0.5, 'Loop length (s)'),
-      beats: int(4, 2, 16, 'Beats per loop'),
-      origin: choice(['center', 'random', 'edge'], 'center', 'Heart'),
-      spread: num(0.55, 0, 0.95, 0.01, 'Pulse travel'),
-      ripple: num(0.12, 0, 0.5, 0.01, 'Ripple in country'),
-      flip: num(0.32, 0.1, 0.6, 0.01, 'Flip length'),
+      duration: num(60, 8, 1200, 1, 'Loop length (s)'),
+      origin: choice(['center', 'random', 'edge'], 'center', 'Starts at'),
+      wander: num(0.25, 0, 1, 0.01, 'Wander'),
+      irregular: num(0.6, 0, 1, 0.01, 'Irregular rhythm'),
+      pause: num(0, 0, 5, 0.05, 'Pause between (s)'),
+      flipTime: num(0.7, 0.15, 3, 0.05, 'Flip (s)'),
+      ripple: num(0.25, 0, 2, 0.05, 'Ripple in country (s)'),
       dub: num(0.5, 0, 1, 0.01, 'Dub'),
       lift: num(0.35, 0, 2, 0.05),
     }),
@@ -301,32 +300,70 @@ export default defineScene({
       }
       return sum.map((v) => v / m) as Vec3;
     });
-    // The heart, and when the pulse reaches each country (in beats). Countries
-    // flip as one; the sea turns tile by tile, like a swell rolling outward.
+    // The heartbeat wanders from country to country: usually on to a neighbour,
+    // sometimes (`wander`) a jump somewhere new; a boxed-in trail picks up again
+    // from the latest country that still has unvisited neighbours. Every country
+    // in view beats once in the first half of the loop, and the same sequence
+    // flips them back in the second half.
+    const active = [...new Set(visible.filter((i) => country[i] >= 0).map((i) => country[i]))];
     const land = visible.filter((i) => country[i] >= 0);
     let heart: Vec3;
-    if (p.origin === 'random' && land.length) heart = middle[country[land[rng.int(0, land.length)]]];
-    else if (globe) {
-      // The point facing the camera when the loop starts.
-      const r = Math.hypot(...pos[0]);
-      heart = facing.map((v) => v * r) as Vec3;
-    } else if (p.origin === 'edge') heart = pos[visible.reduce((a, b) => (pos[b][0] < pos[a][0] ? b : a), visible[0])];
+    if (globe) heart = facing.map((v) => v * Math.hypot(...pos[0])) as Vec3;
+    else if (p.origin === 'edge' && visible.length) heart = pos[visible.reduce((a, b) => (pos[b][0] < pos[a][0] ? b : a), visible[0])];
     else heart = [0, 0, 0];
-    const far = Math.max(1e-6, ...visible.map((i) => dist(pos[i], heart)));
+    const first =
+      p.origin === 'random' || !land.length
+        ? active[rng.int(0, Math.max(1, active.length))]
+        : country[land.reduce((a, b) => (dist(pos[b], heart) < dist(pos[a], heart) ? b : a), land[0])];
+    const order: number[] = [];
+    const prev = new Int32Array(count).fill(-1);
+    const seen = new Set<number>();
+    const visit = (c: number, from: number) => (order.push(c), seen.add(c), (prev[c] = from));
+    if (first !== undefined) visit(first, -1);
+    const isActive = new Set(active);
+    while (order.length < active.length) {
+      const here = order[order.length - 1];
+      const near = [...borders[here]].filter((c) => isActive.has(c) && !seen.has(c));
+      if (near.length && rng() >= p.wander) visit(near[rng.int(0, near.length)], here);
+      else {
+        // Jump: anywhere (wander), else back along the trail to a country with room.
+        let from = -1;
+        if (rng() >= p.wander)
+          for (let k = order.length - 1; k >= 0 && from < 0; k--) if ([...borders[order[k]]].some((c) => isActive.has(c) && !seen.has(c))) from = order[k];
+        const pool = from >= 0 ? [...borders[from]].filter((c) => isActive.has(c) && !seen.has(c)) : active.filter((c) => !seen.has(c));
+        visit(pool[rng.int(0, pool.length)], from >= 0 ? from : here);
+      }
+    }
+    // When each country beats, in loop units, with a little irregularity so the
+    // rhythm feels alive rather than metronomic. Without a pause, beats spread
+    // evenly through the first half (and may overlap); with one, each country
+    // finishes its flip, ripple and dub, the map rests, then the next goes —
+    // countries that don't fit in the half loop stay still.
+    const at = new Float64Array(count).fill(-1);
+    if (p.pause > 0) {
+      const beat = p.ripple + p.flipTime + 0.4; // flip, ripple across the country, dub settling
+      let t = 0;
+      for (const c of order) {
+        if (t + beat > p.duration / 2) break;
+        at[c] = t / p.duration;
+        t += beat + p.pause * (1 + p.irregular * (rng() - 0.5));
+      }
+    } else order.forEach((c, k) => (at[c] = (0.5 * (k + 0.5 + p.irregular * 0.8 * (rng() - 0.5))) / order.length));
+
     // Each country's size, so the ripple inside it takes the same time whether
     // it is Luxembourg or Russia.
     const size = new Float64Array(count).fill(1e-6);
     country.forEach((c, i) => c >= 0 && inView[i] && (size[c] = Math.max(size[c], dist(pos[i], middle[c]))));
-    // Keep every flip inside its beat: the pulse and ripple together end before
-    // the next beat begins, so the loop opens on a still map.
-    const squeeze = Math.min(1, Math.max(0, 1 - p.flip - 0.06) / Math.max(1e-6, p.spread + p.ripple));
     const outline = (i: number) => (shape[i] ? PENT : HEX).map(([x, y]): Vec2 => [x * scale[i], y * scale[i]]);
     const tiles = pos.map((c, i): Tile | null => {
-      if (!inView[i] || (country[i] < 0 && !p.seaFlips)) return null;
-      const m = country[i] >= 0 ? middle[country[i]] : c;
-      // Tip away from the heart, about one of the tile's own mirror lines (every
-      // 30° on a hexagon, 36° on a pentagon) so it lands back in its own slot.
-      const away = toLocal(normal[i], [0, 1, 2].map((k) => m[k] - heart[k]) as Vec3);
+      if (!inView[i] || country[i] < 0 || at[country[i]] < 0) return null;
+      const cc = country[i];
+      const m = middle[cc];
+      // Tip away from the country that passed the beat on (or the start point),
+      // about one of the tile's own mirror lines (every 30° on a hexagon, 36° on
+      // a pentagon) so it lands back in its own slot.
+      const source = prev[cc] >= 0 ? middle[prev[cc]] : heart;
+      const away = toLocal(normal[i], [0, 1, 2].map((k) => m[k] - source[k] + (k === 0 ? 1e-6 : 0)) as Vec3);
       const want = Math.atan2(away[1], away[0]) + Math.PI / 2;
       const sym = shape[i] ? Math.PI / 5 : Math.PI / 6;
       const axis = angle[i] + Math.round((want - angle[i]) / sym) * sym;
@@ -337,8 +374,7 @@ export default defineScene({
           return Math.abs((vx * ca - vy * sa) * perp[0] + (vx * sa + vy * ca) * perp[1]);
         }),
       );
-      const inside = country[i] >= 0 ? dist(c, m) / size[country[i]] : 0;
-      const delay = squeeze * ((p.spread * dist(m, heart)) / far + p.ripple * inside);
+      const delay = at[cc] + (p.ripple * (dist(c, m) / size[cc])) / p.duration;
       return { delay, axis, reach, scale: scale[i] };
     });
 
@@ -382,38 +418,38 @@ export default defineScene({
         : { sky: adjust(day.bg, 0.1, 0.8), horizon: day.bg, ground: adjust(night.bg, 0.05) },
       glow: { color: p.signalColor, intensity: 3 },
       post: { exposure: p.exposure, vignette: 0.35, grain: p.grain, bloom: p.glow ? p.bloom : 0 },
-      data: { tiles, scale },
+      data: { tiles, scale, countries: active.length },
     };
   },
 
   animate({ p, phase }, scene, out) {
-    const beats = 2 * Math.ceil(p.beats / 2); // even, so every tile ends face up
-    const flip = p.flip;
-    const dubAt = Math.min(0.92, flip + 0.1);
+    const flip = p.flipTime;
+    const dubAt = flip + 0.12;
     scene.data.tiles.forEach((tile, i) => {
       if (!tile) {
         out.flip[i] = out.lift[i] = out.glow[i] = 0;
         out.scale[i] = scene.data.scale[i];
         return;
       }
-      // Time in beats for this tile; each whole beat is one completed flip.
-      const u = phase * beats - tile.delay;
-      const k = Math.floor(u);
-      const x = u - k;
+      // Each tile turns over at its moment in the first half of the loop and back
+      // at the same moment in the second half; x is seconds since the last turn.
+      const u = (((phase - tile.delay) % 1) + 1) % 1;
+      const half = u < 0.5 ? 0 : 1;
+      const x = (u - 0.5 * half) * p.duration;
       const t = Math.min(1, x / flip);
       // Lub: a quick, strong turn that eases into place.
       const turn = 1 - (1 - t) ** 3 * (1 + 3 * t);
       // Dub: a softer tremor just after, tipping a little and settling back.
       const dt = x - dubAt;
-      const dub = p.dub * 0.35 * (dt < 0 ? Math.exp(-((dt / 0.025) ** 2)) : Math.exp(-dt / 0.07)) * Math.sin(Math.min(1, Math.max(0, (x - flip) / 0.05)) * (Math.PI / 2));
-      const angle = Math.PI * (k + turn) + dub;
+      const dub = p.dub * 0.35 * (dt < 0 ? Math.exp(-((dt / 0.03) ** 2)) : Math.exp(-dt / 0.09)) * Math.sin(Math.min(1, Math.max(0, (x - flip) / 0.06)) * (Math.PI / 2));
+      const angle = Math.PI * (half + turn) + dub;
       const hop = t < 1 ? Math.sin(Math.PI * t) ** 1.2 * (1 + p.lift) : 0;
       out.flip[i] = angle;
       out.axis[i] = tile.axis;
       out.lift[i] = Math.max(hop, Math.abs(Math.sin(angle)) * 1.02) * tile.reach;
-      out.scale[i] = 1;
-      // A brief flush of the heart colour as the pulse passes through.
-      out.glow[i] = p.glow ? p.signal * (1 - smoothstep(0, 1, x / (flip * 0.8))) * smoothstep(0, 0.04, x) : 0;
+      out.scale[i] = tile.scale;
+      // A brief flush of the heart colour as the beat passes through.
+      out.glow[i] = p.glow ? p.signal * (1 - smoothstep(0, 1, x / (flip * 1.2))) * smoothstep(0, 0.05, x) : 0;
     });
   },
 });
