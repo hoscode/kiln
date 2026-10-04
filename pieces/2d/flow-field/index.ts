@@ -8,7 +8,7 @@ export default definePiece({
   tags: ['noise', 'lines', 'plotter'],
   aspect: 4 / 5,
   params: {
-    palette: palette('kyoto'),
+    palette: palette('hokusai'),
     lines: int(3000, 100, 12000),
     steps: int(220, 10, 800),
     stepLen: num(1.5, 0.5, 6, 0.1, 'Step length'),

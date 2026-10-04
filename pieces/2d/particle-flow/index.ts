@@ -20,7 +20,7 @@ export default definePiece({
   animation: { duration: 12, fps: 60 },
   persist: true,
   params: {
-    palette: palette('nord'),
+    palette: palette('aurora'),
     particles: int(4000, 100, 30000),
     speed: num(1.6, 0.2, 6, 0.1),
     scale: num(2.2, 0.2, 8, 0.05, 'Noise scale'),

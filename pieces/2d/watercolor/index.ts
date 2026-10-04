@@ -16,7 +16,7 @@ export default definePiece({
   tags: ['watercolor', 'texture', 'polygons'],
   aspect: 5 / 4,
   params: {
-    palette: palette('desert'),
+    palette: palette('terracotta-sky'),
     blobs: int(7, 1, 24),
     layers: int(45, 5, 120),
     sides: int(10, 3, 24),

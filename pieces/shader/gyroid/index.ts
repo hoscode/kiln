@@ -9,7 +9,7 @@ export default defineShader({
   aspect: 1,
   animation: { duration: 8, fps: 60, loop: true },
   params: {
-    palette: palette('sunset'),
+    palette: palette('orchid'),
     scale: num(9, 3, 24, 0.1),
     thickness: num(0.025, 0.004, 0.1, 0.001),
     bias: num(0, -0.9, 0.9, 0.01),

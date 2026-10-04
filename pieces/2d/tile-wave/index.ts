@@ -36,7 +36,7 @@ export default definePiece({
       margin: num(90, 0, 300, 1),
     }),
     ...group('Look', {
-      palette: palette('noir'),
+      palette: palette('ember'),
       glow: num(0.6, 0, 1, 0.01, 'Light'),
       shadow: num(0.5, 0, 1, 0.01),
       edge: num(0.35, 0, 1, 0.01),

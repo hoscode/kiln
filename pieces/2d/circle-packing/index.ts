@@ -14,7 +14,7 @@ export default definePiece({
   tags: ['packing', 'geometry'],
   aspect: 1,
   params: {
-    palette: palette('sunset'),
+    palette: palette('matisse'),
     attempts: int(30000, 1000, 200000),
     minR: num(2, 0.5, 20, 0.5, 'Min radius'),
     maxR: num(90, 5, 300, 1, 'Max radius'),
