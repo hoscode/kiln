@@ -1,7 +1,7 @@
 import type { Noise } from './noise';
-import type { ParamSchema, ParamValues } from './params';
+import { group, num, type ParamSchema, type ParamValues } from './params';
 import type { Rng } from './prng';
-import type { Surface } from './surface';
+import type { Surface, View } from './surface';
 
 /** Width of every piece in abstract units; height is UNITS / aspect. */
 export const UNITS = 1000;
@@ -78,6 +78,18 @@ export interface Piece<S extends ParamSchema = ParamSchema, St = undefined> exte
 
 export type AnyPiece = Piece<any, any>;
 
+/** Framing every 2D piece gets: a camera over the finished drawing. */
+export const VIEW_PARAMS = group('View', {
+  viewZoom: { ...num(1, 0.5, 8, 0.01, 'Zoom'), fixed: true },
+  viewX: { ...num(0, -0.5, 0.5, 0.005, 'Pan right'), fixed: true },
+  viewY: { ...num(0, -0.5, 0.5, 0.005, 'Pan down'), fixed: true },
+});
+
+export function viewOf(values: Record<string, unknown>): View {
+  const n = (k: string, d: number) => (typeof values[k] === 'number' ? (values[k] as number) : d);
+  return { zoom: n('viewZoom', 1), x: n('viewX', 0), y: n('viewY', 0) };
+}
+
 export function definePiece<const S extends ParamSchema, St = undefined>(piece: Piece<S, St>): Piece<S, St> {
-  return piece;
+  return { ...piece, params: { ...piece.params, ...VIEW_PARAMS } };
 }

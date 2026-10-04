@@ -6,6 +6,8 @@ interface Base {
   label?: string;
   /** UI section; params without one go under "Parameters". */
   group?: string;
+  /** Left alone by randomValues (e.g. framing, which isn't part of the look). */
+  fixed?: boolean;
 }
 export interface NumberParam extends Base { kind: 'number'; default: number; min: number; max: number; step: number }
 export interface IntParam extends Base { kind: 'int'; default: number; min: number; max: number }
@@ -58,6 +60,7 @@ export function resolve<S extends ParamSchema>(schema: S, stored: Record<string,
 export function randomValues(schema: ParamSchema, rnd: () => number = Math.random): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, p] of Object.entries(schema)) {
+    if (p.fixed) continue;
     switch (p.kind) {
       case 'number':
         out[k] = Math.round((p.min + (p.max - p.min) * rnd()) / p.step) * p.step;

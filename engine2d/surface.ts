@@ -34,6 +34,26 @@ export interface Surface {
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
+/** Camera over the drawing: zoom about the centre, pan in fractions of width / height. */
+export interface View {
+  zoom: number;
+  x: number;
+  y: number;
+}
+export const NO_VIEW: View = { zoom: 1, x: 0, y: 0 };
+
+/** screen = k · world + [tx, ty], in drawing units. */
+function viewTransform(W: number, H: number, v: View): [number, number, number] {
+  const k = v.zoom;
+  return [k, W / 2 - k * (W / 2 + v.x * W), H / 2 - k * (H / 2 + v.y * H)];
+}
+
+/** The part of the drawing in frame: [x, y, w, h]. */
+function visibleRect(W: number, H: number, v: View): [number, number, number, number] {
+  const [k, tx, ty] = viewTransform(W, H, v);
+  return [-tx / k, -ty / k, W / k, H / k];
+}
+
 export class CanvasSurface implements Surface {
   constructor(
     private ctx: Ctx2D,
@@ -46,14 +66,16 @@ export class CanvasSurface implements Surface {
     private offsetY = 0,
     /** Animation frame; moves the grain so it shimmers like film instead of sitting on the glass. */
     private frame = 0,
+    private view: View = NO_VIEW,
   ) {
     const scale = pxWidth / width;
-    ctx.setTransform(scale, 0, 0, scale, 0, -offsetY);
+    const [k, tx, ty] = viewTransform(width, height, view);
+    ctx.setTransform(scale * k, 0, 0, scale * k, scale * tx, scale * ty - offsetY);
   }
 
   background(color: string) {
     this.ctx.fillStyle = color;
-    this.ctx.fillRect(0, 0, this.width, this.height);
+    this.ctx.fillRect(...visibleRect(this.width, this.height, this.view));
   }
 
   path(points: readonly Vec2[], style: Style, closed = false) {
@@ -173,10 +195,12 @@ export class SvgSurface implements Surface {
   constructor(
     readonly width: number,
     readonly height: number,
+    private view: View = NO_VIEW,
   ) {}
 
   background(color: string) {
-    this.els.push(`<rect width="${f(this.width)}" height="${f(this.height)}" fill="${color}"/>`);
+    const [x, y, w, h] = visibleRect(this.width, this.height, this.view);
+    this.els.push(`<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" fill="${color}"/>`);
   }
 
   path(points: readonly Vec2[], style: Style, closed = false) {
@@ -216,7 +240,9 @@ export class SvgSurface implements Surface {
 
   toString() {
     const w = f(this.width), h = f(this.height);
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">\n${this.els.join('\n')}\n</svg>\n`;
+    const [k, tx, ty] = viewTransform(this.width, this.height, this.view);
+    const body = k === 1 && tx === 0 && ty === 0 ? this.els.join('\n') : `<g transform="matrix(${k} 0 0 ${k} ${f(tx)} ${f(ty)})">\n${this.els.join('\n')}\n</g>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">\n${body}\n</svg>\n`;
   }
 }
 

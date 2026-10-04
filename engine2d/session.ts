@@ -4,7 +4,7 @@
 import { fract } from './anim';
 import { createNoise, type Noise } from './noise';
 import type { AnyPiece, PieceMeta, TimeContext } from './piece';
-import { animationFor, UNITS } from './piece';
+import { animationFor, UNITS, viewOf } from './piece';
 import { createRng, type Rng } from './prng';
 import { CanvasSurface, SvgSurface } from './surface';
 
@@ -151,7 +151,7 @@ export class Canvas2DSession implements Session {
   dispose() {}
 
   private surface(offsetY: number, frame: number) {
-    return new CanvasSurface(this.ctx, UNITS, UNITS / this.piece.aspect, this.seed, this.width, offsetY, frame);
+    return new CanvasSurface(this.ctx, UNITS, UNITS / this.piece.aspect, this.seed, this.width, offsetY, frame, viewOf(this.values));
   }
 
   private clear() {
@@ -197,7 +197,7 @@ export class Canvas2DSession implements Session {
 
 /** SVG of the frame at t. Simulations are stepped to t and drawn once. */
 export function renderToSvg(piece: AnyPiece, values: Values, seed: number, t = 0): string {
-  const g = new SvgSurface(UNITS, UNITS / piece.aspect);
+  const g = new SvgSurface(UNITS, UNITS / piece.aspect, viewOf(values));
   if (!piece.setup) {
     piece.draw({ ...timeContext(piece, values, seed, t), g, state: undefined });
     return g.toString();
