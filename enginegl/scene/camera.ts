@@ -86,6 +86,15 @@ export function resolveView(cam: SceneCamera): ViewSpec {
 }
 
 /**
+ * Floor point to aim at, moved `right` / `forward` in screen terms (as seen at
+ * heading `turn`), in units of `zoom` — half the visible height.
+ */
+export function pan(turn: number, zoom: number, right: number, forward: number, from: [number, number] = [0, 0]): [number, number] {
+  const c = Math.cos(rad(turn)), s = Math.sin(rad(turn));
+  return [from[0] + zoom * (-s * right - c * forward), from[1] + zoom * (c * right - s * forward)];
+}
+
+/**
  * Camera for one sub-sample. `jitter` is a sub-pixel offset (pixels) for
  * anti-aliasing; `lens` is a unit-disk sample for depth of field.
  */

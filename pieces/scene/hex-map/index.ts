@@ -1,7 +1,7 @@
 import { bool, choice, color, getPalette, group, int, mix, adjust, num, palette, smoothstep, type Vec2 } from '../../../engine2d';
-import { defineScene, inFrame, type Material, type SceneCamera, type SurfaceTexture } from '../../../enginegl';
+import { defineScene, inFrame, pan, type Material, type SceneCamera, type SurfaceTexture } from '../../../enginegl';
 import { geodesic, toLocal, type Vec3 } from './globe';
-import { countryAt, REGIONS } from './world';
+import { countryAt, frenchRegionAt, REGIONS } from './world';
 
 // Hexagons laid out as a map — a flat floor, or a globe (a geodesic sphere of
 // hexagons and 12 pentagons) — with real countries (Natural Earth borders
@@ -58,6 +58,7 @@ export default defineScene({
       night: palette('dusk', 'Back palette'),
       sea: color('#0b2c55', 'Sea'),
       seaBack: color('#06152b', 'Sea (back)'),
+      neighbours: color('#3d444c', 'Neighbours (France)'),
     }),
     ...group('Heartbeat', {
       duration: num(60, 8, 1200, 1, 'Loop length (s)'),
@@ -83,6 +84,8 @@ export default defineScene({
       turn: num(-90, -180, 180, 1, 'Turn'),
       fov: num(30, 10, 70, 1, 'Lens (fov)'),
       zoom: num(1, 0.3, 10, 0.01),
+      panX: num(0, -3, 3, 0.01, 'Pan right (flat)'),
+      panY: num(0, -3, 3, 0.01, 'Pan forward (flat)'),
       drift: bool(false, 'Drift'),
       sway: num(0.08, 0, 0.6, 0.01, 'Drift amount'),
       dof: num(0, 0, 1, 0.01, 'Depth of field'),
@@ -116,6 +119,7 @@ export default defineScene({
     let lonLat: (i: number) => [number, number] | null; // real-map coordinates, null = off the map
     let inView: boolean[];
 
+    let center: Vec2 = [0, 0]; // where the camera looks on the flat map
     let facing: Vec3 = [0, 0, 1]; // direction from the globe's centre to the camera at the start
     if (globe) {
       // A geodesic globe, sized so its hexagons match the flat map's: `detail`
@@ -125,7 +129,14 @@ export default defineScene({
       const across = region
         ? Math.max((region[1] - region[0]) * rad * Math.cos(((region[2] + region[3]) / 2) * rad), ((region[3] - region[2]) * rad * 16) / 9)
         : Math.PI;
-      const g = geodesic(Math.max(4, Math.min(120, Math.round((1.1 * p.detail) / across))));
+      // A region only needs the globe around it, so it can afford much finer cells.
+      const rc = region && [(region[0] + region[1]) / 2, (region[2] + region[3]) / 2];
+      const g = rc
+        ? geodesic(Math.max(4, Math.min(500, Math.round((1.1 * p.detail) / across))), {
+            dir: [Math.cos(rc[1] * rad) * Math.cos(rc[0] * rad), Math.cos(rc[1] * rad) * Math.sin(rc[0] * rad), Math.sin(rc[1] * rad)],
+            angle: Math.hypot((region[1] - region[0]) * Math.cos(rc[1] * rad), region[3] - region[2]) * rad,
+          })
+        : geodesic(Math.max(4, Math.min(120, Math.round((1.1 * p.detail) / across))));
       const spacing = g.centers.map((c, i) => g.neighbors[i].reduce((sum, j) => sum + Math.hypot(...([0, 1, 2].map((k) => g.centers[j][k] - c[k]) as Vec3)), 0) / g.neighbors[i].length);
       const R = SQRT3 / (spacing.reduce((a, b) => a + b, 0) / spacing.length);
       let geo = g.centers; // true positions: north pole +z, longitude 0 along +x
@@ -184,16 +195,18 @@ export default defineScene({
     } else {
       // `detail` hexagons across the frame (unit circumradius → √3 wide each).
       const zoom = (p.detail * SQRT3 * 9) / 32 / p.zoom;
-      camera = { tilt: p.tilt, turn: p.turn, projection: 'perspective', fov: p.fov, zoom, sway: p.drift ? p.sway : 0, dof: p.dof, fog: p.fog };
-      // A rectangle of hexagons a little larger than the frame (more when tilted).
+      center = pan(p.turn, zoom, p.panX, p.panY);
+      camera = { tilt: p.tilt, turn: p.turn, projection: 'perspective', fov: p.fov, zoom, target: center, sway: p.drift ? p.sway : 0, dof: p.dof, fog: p.fog };
+      // A rectangle of hexagons around the view, a little larger than the frame (more when tilted).
       const hx = zoom * (16 / 9) * 1.15 * (1 + p.tilt / 45);
       const hy = zoom * 1.15 * (1 + p.tilt / 25);
       const index = new Map<string, number>();
       const flat: Vec2[] = [];
       const rows = Math.ceil(hy / 1.5) + 1;
-      for (let r = -rows; r <= rows; r++) {
+      const r0 = Math.round(center[1] / 1.5), c0 = Math.round(center[0] / SQRT3);
+      for (let r = r0 - rows; r <= r0 + rows; r++) {
         const cols = Math.ceil(hx / SQRT3) + 1;
-        for (let col = -cols; col <= cols; col++) {
+        for (let col = c0 - cols; col <= c0 + cols; col++) {
           const q = col - Math.floor(r / 2);
           index.set(`${q},${r}`, flat.length);
           flat.push([SQRT3 * (q + r / 2), 1.5 * r]);
@@ -224,13 +237,24 @@ export default defineScene({
 
     // country[i]: which country tile i belongs to (−1 = sea).
     const country = new Int32Array(n).fill(-1);
+    // Land that is shown but takes no part: the neighbours around France.
+    const still = new Uint8Array(n);
     let count = 0;
     if (p.region !== 'invented') {
-      // Real borders: look up each cell's longitude / latitude.
+      // Real borders: look up each cell's longitude / latitude. For France the
+      // units are its regions, and the countries around it rest in grey.
       const ids = new Map<number, number>();
       for (let i = 0; i < n; i++) {
         const ll = lonLat(i);
-        const c = ll ? countryAt(ll[0], ll[1]) : -1;
+        if (!ll) continue;
+        let c: number;
+        if (p.region === 'france') {
+          c = frenchRegionAt(ll[0], ll[1]);
+          if (c < 0) {
+            still[i] = countryAt(ll[0], ll[1]) >= 0 ? 1 : 0;
+            continue;
+          }
+        } else c = countryAt(ll[0], ll[1]);
         if (c < 0) continue;
         if (!ids.has(c)) ids.set(c, ids.size);
         country[i] = ids.get(c)!;
@@ -288,7 +312,7 @@ export default defineScene({
       return pick;
     };
     const front = colour(Math.min(6, day.colors.length));
-    const back = colour(Math.min(6, night.colors.length));
+    const back = colour(Math.min(p.region === 'france' ? 5 : 6, night.colors.length));
 
     // Each country's middle (over its tiles in frame, else all its tiles).
     const middle = Array.from({ length: count }, (_, c): Vec3 => {
@@ -310,7 +334,7 @@ export default defineScene({
     let heart: Vec3;
     if (globe) heart = facing.map((v) => v * Math.hypot(...pos[0])) as Vec3;
     else if (p.origin === 'edge' && visible.length) heart = pos[visible.reduce((a, b) => (pos[b][0] < pos[a][0] ? b : a), visible[0])];
-    else heart = [0, 0, 0];
+    else heart = [center[0], center[1], 0];
     const first =
       p.origin === 'random' || !land.length
         ? active[rng.int(0, Math.max(1, active.length))]
@@ -337,17 +361,24 @@ export default defineScene({
     // When each country beats, in loop units, with a little irregularity so the
     // rhythm feels alive rather than metronomic. Without a pause, beats spread
     // evenly through the first half (and may overlap); with one, each country
-    // finishes its flip, ripple and dub, the map rests, then the next goes —
-    // countries that don't fit in the half loop stay still.
+    // finishes its flip, ripple and dub, the map rests, then the next goes. If
+    // they don't all fit in the half loop the pauses shrink, and failing that
+    // the beats overlap — every country always beats.
     const at = new Float64Array(count).fill(-1);
     if (p.pause > 0) {
       const beat = p.ripple + p.flipTime + 0.4; // flip, ripple across the country, dub settling
+      const gaps = order.slice(1).map(() => p.pause * (1 + p.irregular * (rng() - 0.5)));
+      const room = Math.max(0, p.duration / 2 - beat); // the last beat must start by here
+      const pauses = gaps.reduce((a, b) => a + b, 0);
+      const squeeze = pauses > 0 ? Math.min(1, Math.max(0, room - beat * gaps.length) / pauses) : 1;
+      const steps = gaps.map((g) => beat + g * squeeze);
+      const total = steps.reduce((a, b) => a + b, 0);
+      const fit = total > room ? room / total : 1;
       let t = 0;
-      for (const c of order) {
-        if (t + beat > p.duration / 2) break;
+      order.forEach((c, k) => {
         at[c] = t / p.duration;
-        t += beat + p.pause * (1 + p.irregular * (rng() - 0.5));
-      }
+        t += (steps[k] ?? 0) * fit;
+      });
     } else order.forEach((c, k) => (at[c] = (0.5 * (k + 0.5 + p.irregular * 0.8 * (rng() - 0.5))) / order.length));
 
     // Each country's size, so the ripple inside it takes the same time whether
@@ -380,8 +411,11 @@ export default defineScene({
 
     const face = (c: string): Material => ({ color: c, roughness: FACE_ROUGHNESS[p.texture], metal: 0, texture: p.texture, textureScale: 1, textureStrength: 0.8 });
     const dayMats = day.colors.slice(0, 6).map(face);
-    const nightMats = night.colors.slice(0, 6).map(face);
-    const seaMat = dayMats.length + nightMats.length;
+    // France needs one more material (its grey neighbours) within the 16.
+    const nightMats = night.colors.slice(0, p.region === 'france' ? 5 : 6).map(face);
+    const france = p.region === 'france';
+    const greyMat = dayMats.length + nightMats.length; // only used for France
+    const seaMat = greyMat + (france ? 1 : 0);
     const edge = EDGES[p.edge];
     const edgeMat = seaMat + 2;
 
@@ -396,12 +430,13 @@ export default defineScene({
         y,
         angle: angle[i],
         ...(globe ? { normal: normal[i], z } : {}),
-        front: country[i] < 0 ? seaMat : front[country[i]],
-        back: country[i] < 0 ? seaMat + 1 : dayMats.length + back[country[i]],
+        front: still[i] ? greyMat : country[i] < 0 ? seaMat : front[country[i]],
+        back: still[i] ? greyMat : country[i] < 0 ? seaMat + 1 : dayMats.length + back[country[i]],
       })),
       materials: [
         ...dayMats,
         ...nightMats,
+        ...(france ? [face(p.neighbours)] : []),
         face(p.sea),
         face(p.seaBack),
         { ...edge, color: edge.color ?? mix(adjust(day.bg, -0.25), night.bg, 0.5) },

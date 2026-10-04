@@ -23,8 +23,12 @@ const normalize = ([x, y, z]: Vec3): Vec3 => {
   return [x / l, y / l, z / l];
 };
 
-/** Cell centres on the unit sphere and each cell's neighbours (5 or 6). */
-export function geodesic(f: number): { centers: Vec3[]; neighbors: number[][] } {
+/**
+ * Cell centres on the unit sphere and each cell's neighbours (5 or 6). With
+ * `near`, only the icosahedron faces within `angle` radians of `dir` are
+ * subdivided — enough for a small region at a much finer `f`.
+ */
+export function geodesic(f: number, near?: { dir: Vec3; angle: number }): { centers: Vec3[]; neighbors: number[][] } {
   const centers: Vec3[] = [];
   const index = new Map<string, number>();
   const neighbors: Set<number>[] = [];
@@ -44,6 +48,12 @@ export function geodesic(f: number): { centers: Vec3[]; neighbors: number[][] } 
 
   for (const [ia, ib, ic] of ICO_FACES) {
     const [A, B, C] = [ICO_VERTS[ia], ICO_VERTS[ib], ICO_VERTS[ic]];
+    if (near) {
+      // A face reaches about 0.66 rad (37°) from its centre.
+      const mid = normalize([0, 1, 2].map((k) => A[k] + B[k] + C[k]) as Vec3);
+      const cos = mid[0] * near.dir[0] + mid[1] * near.dir[1] + mid[2] * near.dir[2];
+      if (Math.acos(Math.max(-1, Math.min(1, cos))) > near.angle + 0.66) continue;
+    }
     // Points i·(B−A)/f + j·(C−A)/f on the face, i + j ≤ f.
     const at = (i: number, j: number) =>
       vertex([0, 1, 2].map((k) => A[k] + ((B[k] - A[k]) * i) / f + ((C[k] - A[k]) * j) / f) as Vec3);

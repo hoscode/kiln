@@ -24,7 +24,7 @@ import {
   walkers,
   type Vec2,
 } from '../../../engine2d';
-import { defineScene, inFrame, type Material, type SceneCamera, type SurfaceTexture } from '../../../enginegl';
+import { defineScene, inFrame, pan, type Material, type SceneCamera, type SurfaceTexture } from '../../../enginegl';
 
 // A Penrose P3 floor where tiles hop, turn over to reveal their other face,
 // and settle. Every tile that moves turns twice per loop (over, then back),
@@ -74,6 +74,8 @@ export default defineScene({
       projection: choice(['perspective', 'orthographic'], 'perspective'),
       fov: num(30, 10, 70, 1, 'Lens (fov)'),
       zoom: num(6, 2, 20, 0.1),
+      panX: num(0, -3, 3, 0.01, 'Pan right'),
+      panY: num(0, -3, 3, 0.01, 'Pan forward'),
       dof: num(0.35, 0, 1, 0.01, 'Depth of field'),
     }),
     ...group('Motion', {
@@ -126,7 +128,9 @@ export default defineScene({
     const { rhombi, prototypes } = penroseP3(p.generations);
     const centers = rhombi.map((r) => r.center);
 
+    const target = pan(p.turn, p.zoom, p.panX, p.panY);
     const camera: SceneCamera = {
+      target,
       tilt: p.tilt,
       turn: p.turn,
       projection: p.projection,
@@ -141,12 +145,13 @@ export default defineScene({
     const seen = inFrame(camera, 16 / 9);
     const visible = centers.map(([x, y]) => seen(x, y));
     const inView = (i: number) => visible[i];
+    // Relative to where the camera looks, so panning keeps the motion in view.
     const startAt: Vec2 =
       p.origin === 'edge'
-        ? [-radius * 0.9, 0]
+        ? [target[0] - radius * 0.9, target[1]]
         : p.origin === 'random'
-          ? [rng.range(-1, 1) * radius * 0.6, rng.range(-1, 1) * radius * 0.4]
-          : [0, 0];
+          ? [target[0] + rng.range(-1, 1) * radius * 0.6, target[1] + rng.range(-1, 1) * radius * 0.4]
+          : target;
 
     // Timing per tile, in loop units (settings are in seconds). Each pass moves,
     // then holds still for `hold` before the next; it must fit its half-loop.
