@@ -8,7 +8,7 @@ Run inside Blender (UI or `blender -b -P`):
 
 Flag artwork comes from blender/flag/flags/<code>.png, exported from the
 kiln flag list by `npx tsx scripts/export-flags.ts`. The cloth is held in a
-gentle static drape for now; wind comes later. Render settings are video-
+cloth simulation blown by gusty, turbulent wind. Render settings are video-
 ready (fixed fps and frame range), so the same scene can go to a sequence.
 """
 
@@ -23,20 +23,32 @@ FLAGS = os.path.join(HERE, "flags")
 COLLECTION = "Flag"
 
 # One tile of the weave texture: vertical yarns (columns) and horizontal
-# yarns (rows) it holds, and its size in pixels. Rows are finer and denser
-# than columns, so each crossing is a rectangle, not a square.
+# yarns (rows) it holds, and its size in pixels. Columns are fewer, thicker
+# and flatter, packed edge to edge; rows finer and closer: each yarn segment
+# on the surface is then a rectangle lying along the flag's length, like the
+# flag itself.
 WEAVE_COLS = 24
-WEAVE_ROWS = 40
+WEAVE_ROWS = 56
 WEAVE_SIZE = 1024
 
 DEFAULTS = dict(
     flag="es",
     width=1.5,              # metres, hoist to fly
-    cols_per_cm=11,         # vertical yarns: fewer, thicker, flatter
-    rows_per_cm=18,         # horizontal yarns: finer, packed closer
+    # Yarn counts, exaggerated ~3x coarser than real flag polyester
+    # (about 11 x 18 per cm) so the weave reads at a distance.
+    cols_per_cm=4,          # vertical yarns: fewer, thicker, flatter
+    rows_per_cm=9.5,        # horizontal yarns: finer, packed closer
     fuzz=1.0,               # loose fibres: haze around yarns, strays across them
     uneven=1.0,             # cloudiness of the cloth (density, dye uptake)
-    drape=1.0,              # depth of the static folds
+    cloth_res=160,          # simulation cells along the flag's width
+    cloth_mass=1000.0,      # whole flag, in the simulation's units (too light
+                            # and the solver jitters the cloth into crumples)
+    gravity=0.2,            # gravity on the cloth (light flag fabric: below 1)
+    wind=4.0,               # strength of the steady wind
+    air_damping=6.0,        # air resistance: calms the flapping, flies flatter
+    turbulence=0.8,         # strength of the gusts and eddies on top of it
+    preroll=48,             # frames simulated before the recorded ones, so
+                            # the clip starts mid-motion
     sun_elevation=30.0,     # degrees above the horizon
     sun_azimuth=-60.0,      # degrees; 0 = sun behind the camera, 180 = behind the flag
     translucency=0.45,      # share of light that passes through the cloth
@@ -68,9 +80,10 @@ def build(**opts):
     image = load_flag(o["flag"])
     aspect = image.size[0] / image.size[1]
     height = o["width"] / aspect
-    flag = make_flag(coll, o["width"], height, o["drape"])
+    flag = make_flag(coll, o["width"], height, o["cloth_res"])
     flag.data.materials.append(fabric_material(image, o))
     make_cameras(coll, scene, o["width"], height)
+    make_wind(coll, scene, flag, o)
     scene["kiln_flag"] = o  # remembered for set_flag and later steps
     return flag
 
@@ -198,20 +211,16 @@ def load_flag(code):
     return img
 
 
-def make_flag(coll, width, height, drape):
-    """A finely divided sheet in the XZ plane, hoist at x = 0, with soft folds
-    (static stand-in for the wind; dense enough for a cloth simulation later)."""
-    nu, nv = 300, max(2, round(300 * height / width))
+def make_flag(coll, width, height, res=160):
+    """A flat sheet in the XZ plane, hoist at x = 0, with a "Hoist" vertex
+    group pinning the pole-side edge for the cloth simulation."""
+    nu, nv = res, max(2, round(res * height / width))
     u = np.linspace(0.0, 1.0, nu + 1)
     v = np.linspace(0.0, 1.0, nv + 1)
     U, V = np.meshgrid(u, v)                     # (nv+1, nu+1)
-    amp = 0.035 * width * drape * U ** 0.8      # held flat at the hoist
-    k = 2 * math.pi / 0.6
-    depth = amp * (np.sin(k * U + 1.3 * (V - 0.5) - 0.4)
-                   + 0.4 * np.sin(1.9 * k * U - 2.1 * (V - 0.5) + 1.7))
-    X = U * width * 0.97                         # folds take up a little cloth
+    X = U * width
     Z = V * height
-    Y = depth
+    Y = np.zeros_like(U)
 
     verts = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)
     idx = np.arange((nu + 1) * (nv + 1)).reshape(nv + 1, nu + 1)
@@ -237,7 +246,56 @@ def make_flag(coll, width, height, drape):
     ob["rest_height"] = height
     ob.location = (-0.485 * width, 0.0, -height / 2)  # centred on the origin
     coll.objects.link(ob)
+    hoist = ob.vertex_groups.new(name="Hoist")
+    hoist.add([int(i) for i in idx[:, 0]], 1.0, "REPLACE")
     return ob
+
+
+def make_wind(coll, scene, flag, o):
+    """Cloth simulation on the flag, blown along +X by a steady wind with
+    turbulence on top, so the motion never settles into a repeating pattern.
+    The simulation starts `preroll` frames before the recorded range."""
+    first = scene.frame_start
+    scene.frame_start = first + o["preroll"]
+    scene.frame_end = first + o["preroll"] + o["frames"] - 1
+
+    cloth = flag.modifiers.new("Cloth", "CLOTH")
+    c = cloth.settings
+    c.quality = 10
+    c.mass = o["cloth_mass"] / len(flag.data.vertices)  # per vertex, from the whole flag's
+    c.air_damping = o["air_damping"]
+    c.tension_stiffness = 15.0
+    c.compression_stiffness = 15.0
+    c.shear_stiffness = 5.0
+    c.bending_stiffness = 0.5        # large smooth folds, not crumples
+    c.vertex_group_mass = "Hoist"    # pinned edge
+    c.effector_weights.gravity = o["gravity"]
+    cache = cloth.point_cache
+    cache.frame_start = first
+    cache.frame_end = scene.frame_end
+    sub = flag.modifiers.new("Smooth", "SUBSURF")
+    sub.levels = 1
+    sub.render_levels = 2
+
+    def field(name, kind, rotation, **settings):
+        # Force fields only attach through the operator.
+        bpy.ops.object.effector_add(type=kind, location=(-1.5, 0.0, 0.0), rotation=rotation)
+        ob = bpy.context.active_object
+        ob.name = name
+        ob["kiln"] = True
+        for c in list(ob.users_collection):
+            c.objects.unlink(ob)
+        coll.objects.link(ob)
+        for k, v in settings.items():
+            setattr(ob.field, k, v)
+        return ob
+
+    # Wind blows along the empty's local +Z: turned to point along +X, and
+    # 15 degrees into the cloth (wind only pushes on cloth facing it).
+    field("Wind", "WIND", (0.0, math.pi / 2, math.radians(15)), strength=30000.0 * o["wind"] * o["cloth_mass"] / 1000.0, flow=0.0, noise=0.0)
+    field("Turbulence", "TURBULENCE", (0.0, 0.0, 0.0),
+          strength=4000.0 * o["turbulence"] * o["cloth_mass"] / 1000.0, size=1.0, noise=0.0, flow=0.5)
+    scene.frame_set(first)
 
 
 def fabric_material(image, o):
@@ -395,8 +453,10 @@ def weave_fields(size, cols, rows, fuzz=1.0, seed=0x5EED):
     """Height (0 in the gaps, 1 atop a crossing) and tone (0.5 average) of a
     plain weave, tiling seamlessly.
 
-    Columns are fewer, thicker, flatter yarns; rows finer and packed closer,
-    so crossings are rectangles. Yarns wander a little in place and
+    Columns are fewer, thicker, flatter yarns packed nearly edge to edge;
+    rows finer, closer, with visible gaps between them. Every yarn segment
+    on the surface is a rectangle lying along the flag, and the visible
+    seams between rows run along it too. Yarns wander a little in place and
     thickness, with slubs, fibre streaks and twist. Fuzz: a haze of loose
     fibres around each yarn, part-filling the gaps, and stray fibres lying
     across the weave."""
@@ -415,7 +475,7 @@ def weave_fields(size, cols, rows, fuzz=1.0, seed=0x5EED):
                     tone=(rng.random(n) - 0.5) * 2,
                     slub=rng.random((n, 6)) - 0.5)
 
-    col, row = yarns(cols, 0.84, 0.16), yarns(rows, 0.78, 0.22)
+    col, row = yarns(cols, 0.93, 0.06), yarns(rows, 0.7, 0.2)
 
     def loop_lerp(table, t):  # smooth periodic interpolation along a yarn
         n = table.shape[-1]
@@ -452,7 +512,7 @@ def weave_fields(size, cols, rows, fuzz=1.0, seed=0x5EED):
     r_slub = 1 + 0.2 * loop_lerp(row["slub"][ri], X / size)
     c_s = (gc - np.floor(gc) - 0.5 - col["offset"][ci]) / (0.5 * col["width"][ci] * c_slub)
     r_s = (gr - np.floor(gr) - 0.5 - row["offset"][ri]) / (0.5 * row["width"][ri] * r_slub)
-    c_prof, r_prof = profile(c_s, 0.5), profile(r_s, 0.6)
+    c_prof, r_prof = profile(c_s, 0.35), profile(r_s, 0.6)
 
     # Fibre streaks run along each yarn, and the yarn's filaments show as
     # fine parallel lines down its length (multifilament polyester has
@@ -461,7 +521,7 @@ def weave_fields(size, cols, rows, fuzz=1.0, seed=0x5EED):
     streak_r = noise(12, rows * 6)
     c_fib = streak_c(X, Y + 97.0)
     r_fib = streak_r(X + 31.0, Y)
-    c_fil = np.sin(2 * np.pi * c_s * 5.5 + 2.0 * c_fib)
+    c_fil = 0.4 * np.sin(2 * np.pi * c_s * 5.5 + 2.0 * c_fib)  # faint: don't stripe the cloth vertically
     r_fil = np.sin(2 * np.pi * r_s * 4.5 + 2.0 * r_fib)
 
     hc = np.where(c_prof > 0, (0.25 + 0.75 * c_elev) * (0.45 + 0.55 * c_prof) + 0.03 * c_fib + 0.02 * c_fil * c_prof, 0)
@@ -528,7 +588,46 @@ def make_cameras(coll, scene, width, height):
     macro = camera("Cam Macro", 100, (-0.17 * width, -0.15, -0.03), macro_target, dof=(0.15, 11.0))
     focus_on_surface(scene, macro)
     make_dolly(coll, scene, width, height)
+    make_emblem_camera(coll, scene, width, height)
     scene.camera = wide
+
+
+def make_emblem_camera(coll, scene, width, height):
+    """The coat of arms and the cloth around it (Spain: a third of the way
+    along), sitting on the left third of the frame rather than dead centre.
+    The camera doesn't move."""
+    from mathutils import Vector
+    bpy.context.view_layer.update()
+    aim = Vector((-0.485 * width + 0.97 * width / 3, 0.0, 0.0))
+    hit, loc, *_ = scene.ray_cast(bpy.context.evaluated_depsgraph_get(), aim + Vector((0, -1.0, 0)), Vector((0, 1.0, 0)))
+    focus = bpy.data.objects.new("Emblem Focus", None)
+    focus["kiln"] = True
+    focus.location = loc if hit else aim
+    coll.objects.link(focus)
+
+    cam = bpy.data.cameras.new("Cam Emblem")
+    cam.lens = 75
+    cam.dof.use_dof = True
+    cam.dof.focus_object = focus
+    cam.dof.aperture_fstop = 5.6
+    ob = bpy.data.objects.new("Cam Emblem", cam)
+    ob["kiln"] = True
+    coll.objects.link(ob)
+    # Aim right of the emblem (a sixth of the ~1.1 m frame) so it sits on
+    # the left third; focus stays on the emblem itself.
+    look = bpy.data.objects.new("Emblem Aim", None)
+    look["kiln"] = True
+    # Only cloth in view through the whole clip, the whole emblem inside the
+    # frame (checked by ray casts over the baked motion).
+    look.location = focus.location + Vector((0.14, 0.0, -0.12))
+    coll.objects.link(look)
+    track = ob.constraints.new("TRACK_TO")
+    track.target = look
+    track.track_axis = "TRACK_NEGATIVE_Z"
+    track.up_axis = "UP_Y"
+    # The emblem, the yellow band and the red bands, seen from a little below
+    # (~9 degrees up). Locked off: the flag is the only thing that moves.
+    ob.location = look.location + Vector((-0.08, -2.45, -0.4))
 
 
 def make_dolly(coll, scene, width, height):
