@@ -16,6 +16,7 @@ export class GLSession implements Session {
   private gl: WebGL2RenderingContext;
   private program: WebGLProgram;
   private loc = new Map<string, WebGLUniformLocation | null>();
+  private textures = new Map<string, { tex: WebGLTexture; source?: TexImageSource }>();
 
   constructor(
     private piece: ShaderPiece,
@@ -46,6 +47,7 @@ export class GLSession implements Session {
     this.set1f('u_duration', animationFor(this.piece, values)?.duration ?? 0);
     this.set1f('u_seed', seed);
     this.setParams(values);
+    this.setTextures(values);
   }
 
   render(t: number, opts: FrameOptions = {}, offsetY = 0) {
@@ -77,6 +79,7 @@ export class GLSession implements Session {
   }
 
   dispose() {
+    for (const { tex } of this.textures.values()) this.gl.deleteTexture(tex);
     this.gl.deleteProgram(this.program);
     this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
@@ -121,9 +124,35 @@ export class GLSession implements Session {
     }
   }
 
+  private setTextures(values: Values) {
+    const gl = this.gl;
+    let unit = 0;
+    for (const [k, t] of Object.entries(this.piece.textures ?? {})) {
+      const spec = typeof t === 'function' ? { draw: t } : t;
+      let slot = this.textures.get(k);
+      if (!slot) this.textures.set(k, (slot = { tex: gl.createTexture()! }));
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, slot.tex);
+      gl.uniform1i(this.u(`tex_${k}`), unit++);
+      const source = spec.draw(values as never);
+      if (source === slot.source) continue;
+      slot.source = source;
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // v = 0 at the bottom, like fragCoord
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, spec.data ? gl.NONE : gl.BROWSER_DEFAULT_WEBGL);
+      gl.texImage2D(gl.TEXTURE_2D, 0, spec.data ? gl.RGBA8 : gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const wrap = spec.repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+    }
+  }
+
   private compile(): WebGLProgram {
     const gl = this.gl;
-    const head = `${PRELUDE}\n${paramUniforms(this.piece.params)}\n#line 1\n`;
+    const samplers = Object.keys(this.piece.textures ?? {}).map((k) => `uniform sampler2D tex_${k};`);
+    const head = `${PRELUDE}\n${paramUniforms(this.piece.params)}\n${samplers.join('\n')}\n#line 1\n`;
     const shader = (type: number, src: string, label: string) => {
       const s = gl.createShader(type)!;
       gl.shaderSource(s, src);
